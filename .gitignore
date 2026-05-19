@@ -1,0 +1,62 @@
+# Dependencies
+
+node_modules/
+ 
+# Environment Variables
+
+.env
+ 
+# Logs
+
+logs
+
+*.log
+
+npm-debug.log*
+ 
+# Runtime files
+
+pids
+
+*.pid
+
+*.seed
+
+*.pid.lock
+ 
+# Coverage directory
+
+coverage/
+ 
+# Build files
+
+dist/
+
+build/
+ 
+# OS generated files
+
+.DS_Store
+
+Thumbs.db
+ 
+# IDE files
+
+.vscode/
+
+.idea/
+ 
+# Temporary files
+
+tmp/
+
+temp/
+ 
+# Nodemon cache
+
+.nodemon
+ 
+# MongoDB local files
+
+data/
+ 
