@@ -6,38 +6,30 @@ const employeeSchema = new mongoose.Schema(
       type: String,
       unique: true,
       sparse: true,
+      trim: true,
     },
-    fullName: {
+    department: {
       type: String,
-      required: true,
+      trim: true,
     },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
+    joiningDate: {
+      type: Date,
     },
-    phone: String,
-    department: String,
-    joiningDate: Date,
-
-    // Dynamic role — references the Role collection
-    role: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Role",
-      required: true,
-    },
-
-    // The User account linked to this employee (if they have login access)
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
-
     status: {
       type: String,
       enum: ["Active", "Inactive"],
       default: "Active",
+    },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      unique: true,
+    },
+    role: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Role",
+      required: true,
     },
   },
   { timestamps: true }

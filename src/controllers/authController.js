@@ -3,7 +3,6 @@ const Employee = require("../models/Employee");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-// POST /api/auth/register — creates the Admin account (one-time setup)
 exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -38,7 +37,6 @@ exports.register = async (req, res) => {
   }
 };
 
-// POST /api/auth/login — works for both admin and employees
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -63,12 +61,34 @@ exports.login = async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    // If employee, also return their role + permissions
     let employeeData = null;
     if (user.role === "employee") {
-      employeeData = await Employee.findOne({ user: user._id })
-        .populate({ path: "role", select: "name permissions parentRole" })
+      const emp = await Employee.findOne({ user: user._id })
+        .populate({
+          path: "role",
+          select: "name permissions parentRole",
+          populate: { path: "permissions", select: "name module action" },
+        })
         .select("-__v");
+
+      if (emp) {
+        const moduleMap = {};
+        (emp.role?.permissions || []).forEach((p) => {
+          if (!moduleMap[p.module]) moduleMap[p.module] = [];
+          moduleMap[p.module].push({ action: p.action });
+        });
+
+        employeeData = {
+          _id: emp._id,
+          employeeId: emp.employeeId,
+          department: emp.department,
+          role: {
+            _id: emp.role._id,
+            name: emp.role.name,
+          },
+          modules: moduleMap,
+        };
+      }
     }
 
     res.json({

@@ -4,14 +4,11 @@ const {
   createRole,
   getRoles,
   getRoleHierarchy,
-  getPermissionsSchema,
   getRoleById,
   updateRole,
   deleteRole,
 } = require("../controllers/roleController");
 
-// Static paths must come before /:id
-router.get("/permissions-schema", protect, getPermissionsSchema);
 router.get("/hierarchy", protect, getRoleHierarchy);
 
 router.post("/", protect, authorize("admin"), createRole);

@@ -1,25 +1,29 @@
 const mongoose = require("mongoose");
 
+
 const userSchema = new mongoose.Schema(
   {
     name: {
       type: String,
       required: true,
+      trim: true,
     },
-
     email: {
       type: String,
       required: true,
       unique: true,
+      trim: true,
+      lowercase: true,
     },
-
+    phone: {
+      type: String,
+      trim: true,
+    },
     password: {
       type: String,
       required: true,
     },
 
-    // "admin" is the top-level system role (hardcoded)
-    // "employee" means they have a dynamic role stored in the Employee model
     role: {
       type: String,
       enum: ["admin", "employee"],

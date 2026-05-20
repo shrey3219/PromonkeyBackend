@@ -8,10 +8,10 @@ const {
   deleteEmployee,
 } = require("../controllers/employeeController");
 
-router.post("/", protect, checkPermission("employee", "create"), createEmployee);
-router.get("/", protect, checkPermission("employee", "read"), getEmployees);
-router.get("/:id", protect, checkPermission("employee", "read"), getEmployeeById);
-router.put("/:id", protect, checkPermission("employee", "update"), updateEmployee);
-router.delete("/:id", protect, checkPermission("employee", "delete"), deleteEmployee);
+router.post("/", protect, checkPermission("Employees", "create"), createEmployee);
+router.get("/", protect, checkPermission("Employees", "read"), getEmployees);
+router.get("/:id", protect, checkPermission("Employees", "read"), getEmployeeById);
+router.put("/:id", protect, checkPermission("Employees", "update"), updateEmployee);
+router.delete("/:id", protect, checkPermission("Employees", "delete"), deleteEmployee);
 
 module.exports = router;

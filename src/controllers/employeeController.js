@@ -3,17 +3,15 @@ const Role = require("../models/Role");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 
-// POST /api/employees
-// Admin creates employee, assigns role, and creates login account — all in one
 exports.createEmployee = async (req, res) => {
   try {
-    const { employeeId, fullName, email, phone, department, joiningDate, role, password } = req.body;
+    const { name, email, phone, password, employeeId, department, joiningDate, role } = req.body;
 
-    if (!fullName || !email || !role || !password) {
-      return res.status(400).json({ message: "fullName, email, role, and password are required" });
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({ message: "name, email, password, and role are required" });
     }
 
-    // Validate role exists and is active
+    // Validate role
     const roleDoc = await Role.findOne({ _id: role, isActive: true });
     if (!roleDoc) {
       return res.status(400).json({ message: "Invalid or inactive role" });
@@ -25,37 +23,34 @@ exports.createEmployee = async (req, res) => {
       return res.status(400).json({ message: "An account with this email already exists" });
     }
 
-    // Create login account
+    // Create User — holds name, email, phone, password
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await User.create({
-      name: fullName,
+      name,
       email,
+      phone,
       password: hashedPassword,
       role: "employee",
     });
 
-    // Create employee record linked to the user account
+    // Create Employee — holds only work-related fields + refs to User and Role
     const employee = await Employee.create({
       employeeId,
-      fullName,
-      email,
-      phone,
       department,
       joiningDate,
       role,
       user: user._id,
     });
 
-    const populated = await employee.populate("role", "name permissions parentRole");
+    const populated = await employee.populate([
+      { path: "user", select: "name email phone" },
+      { path: "role", select: "name parentRole permissions" },
+    ]);
 
-    res.status(201).json({
-      employee: populated,
-      loginEmail: email,
-    });
+    res.status(201).json(populated);
   } catch (error) {
-    // Rollback user if employee creation fails
     if (error.code === 11000) {
-      return res.status(400).json({ message: "Employee with this email already exists" });
+      return res.status(400).json({ message: "Employee ID already exists" });
     }
     res.status(500).json({ message: error.message });
   }
@@ -65,8 +60,12 @@ exports.createEmployee = async (req, res) => {
 exports.getEmployees = async (_req, res) => {
   try {
     const employees = await Employee.find()
-      .populate("role", "name permissions parentRole")
-      .populate("user", "name email")
+      .populate("user", "name email phone")
+      .populate({
+        path: "role",
+        select: "name parentRole permissions",
+        populate: { path: "permissions", select: "name action" },
+      })
       .sort({ createdAt: -1 });
     res.json(employees);
   } catch (error) {
@@ -78,8 +77,12 @@ exports.getEmployees = async (_req, res) => {
 exports.getEmployeeById = async (req, res) => {
   try {
     const employee = await Employee.findById(req.params.id)
-      .populate("role", "name permissions parentRole")
-      .populate("user", "name email");
+      .populate("user", "name email phone")
+      .populate({
+        path: "role",
+        select: "name parentRole permissions",
+        populate: { path: "permissions", select: "name action" },
+      });
 
     if (!employee) {
       return res.status(404).json({ message: "Employee not found" });
@@ -93,8 +96,10 @@ exports.getEmployeeById = async (req, res) => {
 // PUT /api/employees/:id
 exports.updateEmployee = async (req, res) => {
   try {
-    if (req.body.role) {
-      const roleDoc = await Role.findOne({ _id: req.body.role, isActive: true });
+    const { employeeId, department, joiningDate, role, status } = req.body;
+
+    if (role) {
+      const roleDoc = await Role.findOne({ _id: role, isActive: true });
       if (!roleDoc) {
         return res.status(400).json({ message: "Invalid or inactive role" });
       }
@@ -102,9 +107,15 @@ exports.updateEmployee = async (req, res) => {
 
     const employee = await Employee.findByIdAndUpdate(
       req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    ).populate("role", "name permissions parentRole");
+      { employeeId, department, joiningDate, role, status },
+      { new: true, runValidators: true, omitUndefined: true }
+    )
+      .populate("user", "name email phone")
+      .populate({
+        path: "role",
+        select: "name parentRole permissions",
+        populate: { path: "permissions", select: "name action" },
+      });
 
     if (!employee) {
       return res.status(404).json({ message: "Employee not found" });
@@ -115,7 +126,7 @@ exports.updateEmployee = async (req, res) => {
   }
 };
 
-// DELETE /api/employees/:id
+// DELETE /api/employees/:id — deletes employee + linked user account
 exports.deleteEmployee = async (req, res) => {
   try {
     const employee = await Employee.findByIdAndDelete(req.params.id);
@@ -123,7 +134,6 @@ exports.deleteEmployee = async (req, res) => {
       return res.status(404).json({ message: "Employee not found" });
     }
 
-    // Also delete the linked user account
     if (employee.user) {
       await User.findByIdAndDelete(employee.user);
     }
