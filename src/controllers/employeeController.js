@@ -23,6 +23,22 @@ exports.createEmployee = async (req, res) => {
       return res.status(400).json({ message: "An account with this email already exists" });
     }
 
+    // Check phone not already taken (if provided)
+    if (phone) {
+      const phoneTaken = await User.findOne({ phone });
+      if (phoneTaken) {
+        return res.status(400).json({ message: "An account with this phone number already exists" });
+      }
+    }
+
+    // Check employeeId not already taken (if provided)
+    if (employeeId) {
+      const empIdTaken = await Employee.findOne({ employeeId });
+      if (empIdTaken) {
+        return res.status(400).json({ message: "Employee ID already exists" });
+      }
+    }
+
     // Create User — holds name, email, phone, password
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await User.create({
@@ -34,22 +50,48 @@ exports.createEmployee = async (req, res) => {
     });
 
     // Create Employee — holds only work-related fields + refs to User and Role
-    const employee = await Employee.create({
-      employeeId,
-      department,
-      joiningDate,
-      role,
-      user: user._id,
-    });
+    let employee;
+    try {
+      employee = await Employee.create({
+        employeeId,
+        department,
+        joiningDate,
+        role,
+        user: user._id,
+      });
+    } catch (empError) {
+      // Rollback: delete the user we just created so it doesn't become orphaned
+      await User.findByIdAndDelete(user._id);
+
+      if (empError.code === 11000) {
+        const duplicateField = Object.keys(empError.keyPattern || {})[0];
+        if (duplicateField === "employeeId") {
+          return res.status(400).json({ message: "Employee ID already exists" });
+        }
+        if (duplicateField === "user") {
+          return res.status(400).json({ message: "A user account with this email already has an employee record" });
+        }
+        return res.status(400).json({ message: `Duplicate value for field: ${duplicateField}` });
+      }
+      throw empError;
+    }
 
     const populated = await employee.populate([
       { path: "user", select: "name email phone" },
-      { path: "role", select: "name parentRole permissions" },
+      {
+        path: "role",
+        select: "name parentRole permissions",
+        populate: { path: "permissions", select: "name module actions" },
+      },
     ]);
 
     res.status(201).json(populated);
   } catch (error) {
     if (error.code === 11000) {
+      const duplicateField = Object.keys(error.keyPattern || {})[0];
+      if (duplicateField === "email") {
+        return res.status(400).json({ message: "An account with this email already exists" });
+      }
       return res.status(400).json({ message: "Employee ID already exists" });
     }
     res.status(500).json({ message: error.message });
@@ -64,7 +106,7 @@ exports.getEmployees = async (_req, res) => {
       .populate({
         path: "role",
         select: "name parentRole permissions",
-        populate: { path: "permissions", select: "name action" },
+        populate: { path: "permissions", select: "name module actions" },
       })
       .sort({ createdAt: -1 });
     res.json(employees);
@@ -81,7 +123,7 @@ exports.getEmployeeById = async (req, res) => {
       .populate({
         path: "role",
         select: "name parentRole permissions",
-        populate: { path: "permissions", select: "name action" },
+        populate: { path: "permissions", select: "name module actions" },
       });
 
     if (!employee) {
@@ -105,16 +147,24 @@ exports.updateEmployee = async (req, res) => {
       }
     }
 
+    // Build update object — only include fields that were actually sent
+    const updateFields = {};
+    if (employeeId !== undefined) updateFields.employeeId = employeeId;
+    if (department !== undefined) updateFields.department = department;
+    if (joiningDate !== undefined) updateFields.joiningDate = joiningDate;
+    if (role !== undefined) updateFields.role = role;
+    if (status !== undefined) updateFields.status = status;
+
     const employee = await Employee.findByIdAndUpdate(
       req.params.id,
-      { employeeId, department, joiningDate, role, status },
-      { new: true, runValidators: true, omitUndefined: true }
+      { $set: updateFields },
+      { new: true, runValidators: true }
     )
       .populate("user", "name email phone")
       .populate({
         path: "role",
         select: "name parentRole permissions",
-        populate: { path: "permissions", select: "name action" },
+        populate: { path: "permissions", select: "name module actions" },
       });
 
     if (!employee) {

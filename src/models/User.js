@@ -18,6 +18,8 @@ const userSchema = new mongoose.Schema(
     phone: {
       type: String,
       trim: true,
+      unique: true,
+      sparse: true,  // allows multiple docs without phone (null/undefined)
     },
     password: {
       type: String,

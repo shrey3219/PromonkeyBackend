@@ -24,8 +24,8 @@ exports.createRole = async (req, res) => {
       if (!parent) return res.status(400).json({ message: "Parent role not found" });
     }
 
-    // Validate all permission ids exist
-    if (permissions && permissions.length > 0) {
+    // Validate all permission ids exist (only if permissions array provided)
+    if (permissions !== undefined && permissions.length > 0) {
       const found = await Permission.find({ _id: { $in: permissions }, isActive: true });
       if (found.length !== permissions.length) {
         return res.status(400).json({ message: "One or more permission IDs are invalid or inactive" });
@@ -40,7 +40,7 @@ exports.createRole = async (req, res) => {
 
     const populated = await role.populate([
       { path: "parentRole", select: "name" },
-      { path: "permissions", select: "name action" },
+      { path: "permissions", select: "name module actions" },
     ]);
 
     res.status(201).json(populated);
@@ -54,7 +54,7 @@ exports.getRoles = async (_req, res) => {
   try {
     const roles = await Role.find({ isActive: true })
       .populate("parentRole", "name")
-      .populate("permissions", "name action")
+      .populate("permissions", "name module actions")
       .sort({ name: 1 });
     res.json(roles);
   } catch (error) {
@@ -66,19 +66,19 @@ exports.getRoles = async (_req, res) => {
 exports.getRoleHierarchy = async (_req, res) => {
   try {
     const roles = await Role.find({ isActive: true })
-      .populate("permissions", "name action")
+      .populate("permissions", "name module actions")
       .lean();
 
     const map = {};
-    roles.forEach((r) => { map[r._id] = { ...r, children: [] }; });
+    roles.forEach((r) => { map[r._id.toString()] = { ...r, children: [] }; });
 
     const tree = [];
     roles.forEach((r) => {
       if (r.parentRole) {
-        const parent = map[r.parentRole];
-        if (parent) parent.children.push(map[r._id]);
+        const parent = map[r.parentRole.toString()];
+        if (parent) parent.children.push(map[r._id.toString()]);
       } else {
-        tree.push(map[r._id]);
+        tree.push(map[r._id.toString()]);
       }
     });
 
@@ -93,7 +93,7 @@ exports.getRoleById = async (req, res) => {
   try {
     const role = await Role.findById(req.params.id)
       .populate("parentRole", "name")
-      .populate("permissions", "name action");
+      .populate("permissions", "name module actions");
     if (!role) return res.status(404).json({ message: "Role not found" });
     res.json(role);
   } catch (error) {
@@ -119,7 +119,7 @@ exports.updateRole = async (req, res) => {
       if (!parent) return res.status(400).json({ message: "Parent role not found" });
     }
 
-    if (permissions && permissions.length > 0) {
+    if (permissions !== undefined && permissions.length > 0) {
       const found = await Permission.find({ _id: { $in: permissions }, isActive: true });
       if (found.length !== permissions.length) {
         return res.status(400).json({ message: "One or more permission IDs are invalid or inactive" });
@@ -136,7 +136,7 @@ exports.updateRole = async (req, res) => {
       { new: true, runValidators: true }
     )
       .populate("parentRole", "name")
-      .populate("permissions", "name action");
+      .populate("permissions", "name module actions");
 
     if (!role) return res.status(404).json({ message: "Role not found" });
     res.json(role);
