@@ -59,20 +59,23 @@ exports.createPermission = async (req, res) => {
   try {
     const { name, module, actions } = req.body;
 
-    if (!name || !module || !actions) {
-      return res.status(400).json({ message: "name, module, and actions are required" });
+    if (!module || !actions) {
+      return res.status(400).json({ message: "module and actions are required" });
     }
 
     const { actions: parsedActions, error } = parseActions(actions);
     if (error) return res.status(400).json({ message: error });
 
-    const existing = await Permission.findOne({ name: name.trim() });
-    if (existing) {
-      return res.status(400).json({ message: "Permission with this name already exists" });
+    // Name uniqueness check only if name is provided
+    if (name) {
+      const existing = await Permission.findOne({ name: name.trim() });
+      if (existing) {
+        return res.status(400).json({ message: "Permission with this name already exists" });
+      }
     }
 
     const permission = await Permission.create({
-      name: name.trim(),
+      ...(name && { name: name.trim() }),
       module: module.trim(),
       actions: parsedActions,
     });
@@ -88,7 +91,7 @@ exports.updatePermission = async (req, res) => {
   try {
     const { name, module, actions } = req.body;
 
-    if (!name && !module && actions === undefined) {
+    if (!module && actions === undefined) {
       return res.status(400).json({ message: "Provide at least one field to update: name, module, or actions" });
     }
 

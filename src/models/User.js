@@ -28,8 +28,12 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["admin", "employee"],
+      enum: ["admin", "employee", "client"],
       default: "employee",
+    },
+    profileImage: {
+      url: { type: String, default: "" },
+      publicId: { type: String, default: "" }, // needed to delete old image from Cloudinary
     },
   },
   { timestamps: true }

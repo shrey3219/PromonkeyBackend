@@ -24,6 +24,7 @@ app.use("/api/auth", require("./src/routes/authRoutes"));
 app.use("/api/permissions", require("./src/routes/permissionRoutes"));
 app.use("/api/roles", require("./src/routes/roleRoutes"));
 app.use("/api/employees", require("./src/routes/employeeRoutes"));
+app.use("/api/clients", require("./src/routes/clientRoutes"));
  
 const PORT = process.env.PORT || 6969;
  

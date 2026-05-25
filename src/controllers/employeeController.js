@@ -2,6 +2,8 @@ const Employee = require("../models/Employee");
 const Role = require("../models/Role");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
+const { sendEmployeeWelcomeEmail } = require("../utils/sendEmail");
+const { cloudinary } = require("../config/cloudinary");
 
 exports.createEmployee = async (req, res) => {
   try {
@@ -41,12 +43,19 @@ exports.createEmployee = async (req, res) => {
 
     // Create User — holds name, email, phone, password
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    // If image was uploaded via multer-cloudinary, req.file will have the URL
+    const profileImage = req.file
+      ? { url: req.file.path, publicId: req.file.filename }
+      : { url: "", publicId: "" };
+
     const user = await User.create({
       name,
       email,
       phone,
       password: hashedPassword,
       role: "employee",
+      profileImage,
     });
 
     // Create Employee — holds only work-related fields + refs to User and Role
@@ -63,6 +72,11 @@ exports.createEmployee = async (req, res) => {
       // Rollback: delete the user we just created so it doesn't become orphaned
       await User.findByIdAndDelete(user._id);
 
+      // Also delete uploaded image from Cloudinary if any
+      if (req.file && req.file.filename) {
+        await cloudinary.uploader.destroy(req.file.filename).catch(() => {});
+      }
+
       if (empError.code === 11000) {
         const duplicateField = Object.keys(empError.keyPattern || {})[0];
         if (duplicateField === "employeeId") {
@@ -77,13 +91,18 @@ exports.createEmployee = async (req, res) => {
     }
 
     const populated = await employee.populate([
-      { path: "user", select: "name email phone" },
+      { path: "user", select: "name email phone profileImage" },
       {
         path: "role",
         select: "name parentRole permissions",
         populate: { path: "permissions", select: "name module actions" },
       },
     ]);
+
+    // Send welcome email with plain-text password (non-blocking)
+    sendEmployeeWelcomeEmail(email, name, password).catch((err) => {
+      console.error("Failed to send welcome email:", err.message);
+    });
 
     res.status(201).json(populated);
   } catch (error) {
@@ -102,7 +121,7 @@ exports.createEmployee = async (req, res) => {
 exports.getEmployees = async (_req, res) => {
   try {
     const employees = await Employee.find()
-      .populate("user", "name email phone")
+      .populate("user", "name email phone profileImage")
       .populate({
         path: "role",
         select: "name parentRole permissions",
@@ -119,7 +138,7 @@ exports.getEmployees = async (_req, res) => {
 exports.getEmployeeById = async (req, res) => {
   try {
     const employee = await Employee.findById(req.params.id)
-      .populate("user", "name email phone")
+      .populate("user", "name email phone profileImage")
       .populate({
         path: "role",
         select: "name parentRole permissions",
@@ -147,7 +166,7 @@ exports.updateEmployee = async (req, res) => {
       }
     }
 
-    // Build update object — only include fields that were actually sent
+    // Build employee update object
     const updateFields = {};
     if (employeeId !== undefined) updateFields.employeeId = employeeId;
     if (department !== undefined) updateFields.department = department;
@@ -155,12 +174,31 @@ exports.updateEmployee = async (req, res) => {
     if (role !== undefined) updateFields.role = role;
     if (status !== undefined) updateFields.status = status;
 
+    // If a new image was uploaded, update profileImage on the linked User
+    if (req.file) {
+      // Find current employee to get linked user's old image publicId
+      const existing = await Employee.findById(req.params.id).populate("user", "profileImage");
+      if (existing && existing.user) {
+        // Delete old image from Cloudinary if it exists
+        if (existing.user.profileImage && existing.user.profileImage.publicId) {
+          await cloudinary.uploader.destroy(existing.user.profileImage.publicId).catch(() => {});
+        }
+        // Update User's profileImage
+        await User.findByIdAndUpdate(existing.user._id, {
+          $set: {
+            "profileImage.url": req.file.path,
+            "profileImage.publicId": req.file.filename,
+          },
+        });
+      }
+    }
+
     const employee = await Employee.findByIdAndUpdate(
       req.params.id,
       { $set: updateFields },
       { new: true, runValidators: true }
     )
-      .populate("user", "name email phone")
+      .populate("user", "name email phone profileImage")
       .populate({
         path: "role",
         select: "name parentRole permissions",
@@ -176,7 +214,7 @@ exports.updateEmployee = async (req, res) => {
   }
 };
 
-// DELETE /api/employees/:id — deletes employee + linked user account
+// DELETE /api/employees/:id — deletes employee + linked user account + Cloudinary image
 exports.deleteEmployee = async (req, res) => {
   try {
     const employee = await Employee.findByIdAndDelete(req.params.id);
@@ -185,7 +223,11 @@ exports.deleteEmployee = async (req, res) => {
     }
 
     if (employee.user) {
-      await User.findByIdAndDelete(employee.user);
+      const user = await User.findByIdAndDelete(employee.user);
+      // Delete profile image from Cloudinary if exists
+      if (user && user.profileImage && user.profileImage.publicId) {
+        await cloudinary.uploader.destroy(user.profileImage.publicId).catch(() => {});
+      }
     }
 
     res.json({ message: "Employee and login account deleted successfully" });
