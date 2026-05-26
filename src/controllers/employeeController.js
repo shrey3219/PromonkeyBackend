@@ -41,10 +41,9 @@ exports.createEmployee = async (req, res) => {
       }
     }
 
-    // Create User — holds name, email, phone, password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // If image was uploaded via multer-cloudinary, req.file will have the URL
+  
     const profileImage = req.file
       ? { url: req.file.path, publicId: req.file.filename }
       : { url: "", publicId: "" };
@@ -99,7 +98,7 @@ exports.createEmployee = async (req, res) => {
       },
     ]);
 
-    // Send welcome email with plain-text password (non-blocking)
+   
     sendEmployeeWelcomeEmail(email, name, password).catch((err) => {
       console.error("Failed to send welcome email:", err.message);
     });
@@ -174,16 +173,16 @@ exports.updateEmployee = async (req, res) => {
     if (role !== undefined) updateFields.role = role;
     if (status !== undefined) updateFields.status = status;
 
-    // If a new image was uploaded, update profileImage on the linked User
+  
     if (req.file) {
-      // Find current employee to get linked user's old image publicId
+      
       const existing = await Employee.findById(req.params.id).populate("user", "profileImage");
       if (existing && existing.user) {
-        // Delete old image from Cloudinary if it exists
+      
         if (existing.user.profileImage && existing.user.profileImage.publicId) {
           await cloudinary.uploader.destroy(existing.user.profileImage.publicId).catch(() => {});
         }
-        // Update User's profileImage
+
         await User.findByIdAndUpdate(existing.user._id, {
           $set: {
             "profileImage.url": req.file.path,

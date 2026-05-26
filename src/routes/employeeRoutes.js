@@ -9,7 +9,7 @@ const {
   deleteEmployee,
 } = require("../controllers/employeeController");
 
-// upload.single("profileImage") — frontend must send file with field name "profileImage"
+// upload.single("profileImage") 
 router.post("/", protect, checkPermission("Employees", "create"), upload.single("profileImage"), createEmployee);
 router.get("/", protect, checkPermission("Employees", "read"), getEmployees);
 router.get("/:id", protect, checkPermission("Employees", "read"), getEmployeeById);

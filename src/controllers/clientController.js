@@ -61,7 +61,7 @@ exports.createClient = async (req, res) => {
 
     await client.populate("createdBy", "name email");
 
-    // Send welcome email with plain-text password (non-blocking)
+  
     sendClientWelcomeEmail(email, clientName, password).catch((err) => {
       console.error("Failed to send client welcome email:", err.message);
     });
@@ -113,7 +113,7 @@ exports.updateClient = async (req, res) => {
       return res.status(404).json({ message: "Client not found" });
     }
 
-    // Email uniqueness check (excluding self)
+ 
     if (email && email.toLowerCase().trim() !== client.email) {
       const existing = await User.findOne({
         email: email.toLowerCase().trim(),
@@ -181,7 +181,7 @@ exports.deleteClient = async (req, res) => {
       await User.findByIdAndDelete(client.user);
     }
 
-    // Delete profile image from Cloudinary
+   
     if (client.profileImage && client.profileImage.publicId) {
       await cloudinary.uploader.destroy(client.profileImage.publicId).catch(() => {});
     }

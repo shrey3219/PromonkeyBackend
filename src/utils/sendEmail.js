@@ -11,19 +11,18 @@ const transporter = nodemailer.createTransport({
 });
 
 /**
- * Send welcome email to newly created employee with their login credentials.
- * @param {string} toEmail   - Employee's email address
- * @param {string} name      - Employee's full name
- * @param {string} password  - Plain-text password (before hashing)
+ * @param {string} toEmail   
+ * @param {string} name     
+ * @param {string} password  
  */
 const sendEmployeeWelcomeEmail = async (toEmail, name, password) => {
   const mailOptions = {
     from: process.env.EMAIL_FROM,
     to: toEmail,
-    subject: "Welcome to ProMonkey CRM — Your Login Credentials",
+    subject: "Welcome to ProMonkey Team — Your Login Credentials",
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e0e0e0; border-radius: 8px;">
-        <h2 style="color: #4F46E5;">Welcome to ProMonkey CRM, ${name}!</h2>
+        <h2 style="color: #4F46E5;">Welcome to ProMonkey Team, ${name}!</h2>
         <p>Your account has been created by the admin. Here are your login credentials:</p>
 
         <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
@@ -54,10 +53,9 @@ const sendEmployeeWelcomeEmail = async (toEmail, name, password) => {
 };
 
 /**
- * Send welcome email to newly created client with their login credentials.
- * @param {string} toEmail   - Client's email address
- * @param {string} name      - Client's name
- * @param {string} password  - Plain-text password (before hashing)
+ * @param {string} toEmail  
+ * @param {string} name  
+ * @param {string} password  
  */
 const sendClientWelcomeEmail = async (toEmail, name, password) => {
   const mailOptions = {

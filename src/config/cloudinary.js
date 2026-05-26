@@ -8,7 +8,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Storage — images go to "promonkey/employees" folder on Cloudinary
+
 const storage = new CloudinaryStorage({
   cloudinary,
   params: {
@@ -18,7 +18,6 @@ const storage = new CloudinaryStorage({
   },
 });
 
-// Multer instance — max 2 MB
 const upload = multer({
   storage,
   limits: { fileSize: 2 * 1024 * 1024 },

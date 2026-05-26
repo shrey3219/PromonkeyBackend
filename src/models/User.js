@@ -33,7 +33,7 @@ const userSchema = new mongoose.Schema(
     },
     profileImage: {
       url: { type: String, default: "" },
-      publicId: { type: String, default: "" }, // needed to delete old image from Cloudinary
+      publicId: { type: String, default: "" }, 
     },
   },
   { timestamps: true }
