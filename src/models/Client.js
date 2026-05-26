@@ -13,17 +13,19 @@ const clientSchema = new mongoose.Schema(
     },
     email: {
       type: String,
+      required: [true, "Email is required"],
       unique: true,
-      sparse: true,
       trim: true,
       lowercase: true,
     },
     phone: {
       type: String,
+      required: [true, "Phone number is required"],
       trim: true,
     },
     address: {
       type: String,
+      required: [true, "Address is required"],
       trim: true,
     },
     notes: {

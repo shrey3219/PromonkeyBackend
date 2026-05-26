@@ -1,5 +1,6 @@
 const Role = require("../models/Role");
 const Permission = require("../models/Permission");
+const Employee = require("../models/Employee");
 
 // POST /api/roles
 exports.createRole = async (req, res) => {
@@ -26,9 +27,9 @@ exports.createRole = async (req, res) => {
 
     // Validate all permission ids exist (only if permissions array provided)
     if (permissions !== undefined && permissions.length > 0) {
-      const found = await Permission.find({ _id: { $in: permissions }, isActive: true });
+      const found = await Permission.find({ _id: { $in: permissions } });
       if (found.length !== permissions.length) {
-        return res.status(400).json({ message: "One or more permission IDs are invalid or inactive" });
+        return res.status(400).json({ message: "One or more permission IDs are invalid" });
       }
     }
 
@@ -52,7 +53,7 @@ exports.createRole = async (req, res) => {
 // GET /api/roles
 exports.getRoles = async (_req, res) => {
   try {
-    const roles = await Role.find({ isActive: true })
+    const roles = await Role.find()
       .populate("parentRole", "name")
       .populate("permissions", "name module actions")
       .sort({ name: 1 });
@@ -65,7 +66,7 @@ exports.getRoles = async (_req, res) => {
 // GET /api/roles/hierarchy
 exports.getRoleHierarchy = async (_req, res) => {
   try {
-    const roles = await Role.find({ isActive: true })
+    const roles = await Role.find()
       .populate("permissions", "name module actions")
       .lean();
 
@@ -120,9 +121,9 @@ exports.updateRole = async (req, res) => {
     }
 
     if (permissions !== undefined && permissions.length > 0) {
-      const found = await Permission.find({ _id: { $in: permissions }, isActive: true });
+      const found = await Permission.find({ _id: { $in: permissions } });
       if (found.length !== permissions.length) {
-        return res.status(400).json({ message: "One or more permission IDs are invalid or inactive" });
+        return res.status(400).json({ message: "One or more permission IDs are invalid" });
       }
     }
 
@@ -145,24 +146,34 @@ exports.updateRole = async (req, res) => {
   }
 };
 
-// DELETE /api/roles/:id — soft delete
+// DELETE /api/roles/:id — hard delete
 exports.deleteRole = async (req, res) => {
   try {
-    const children = await Role.find({ parentRole: req.params.id, isActive: true });
+    const role = await Role.findById(req.params.id);
+    if (!role) return res.status(404).json({ message: "Role not found" });
+
+    // Block if child roles exist
+    const children = await Role.find({ parentRole: req.params.id });
     if (children.length > 0) {
       return res.status(400).json({
-        message: `Cannot deactivate. ${children.length} child role(s) depend on it: ${children.map((c) => c.name).join(", ")}`,
+        message: `Cannot delete. ${children.length} child role(s) depend on it: ${children.map((c) => c.name).join(", ")}`,
       });
     }
 
-    const role = await Role.findByIdAndUpdate(
-      req.params.id,
-      { isActive: false },
-      { new: true }
-    );
+    // Block if any employee is assigned this role
+    const employeesUsingRole = await Employee.find({
+      role: req.params.id,
+    }).select("employeeId");
 
-    if (!role) return res.status(404).json({ message: "Role not found" });
-    res.json({ message: "Role deactivated successfully", role });
+    if (employeesUsingRole.length > 0) {
+      return res.status(400).json({
+        message: `Cannot delete. ${employeesUsingRole.length} employee(s) are assigned this role: ${employeesUsingRole.map((e) => e.employeeId).join(", ")}`,
+      });
+    }
+
+    await Role.findByIdAndDelete(req.params.id);
+
+    res.json({ message: "Role deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

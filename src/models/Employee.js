@@ -4,16 +4,18 @@ const employeeSchema = new mongoose.Schema(
   {
     employeeId: {
       type: String,
+      required: [true, "Employee ID is required"],
       unique: true,
-      sparse: true,
       trim: true,
     },
     department: {
       type: String,
+      required: [true, "Department is required"],
       trim: true,
     },
     joiningDate: {
       type: Date,
+      required: [true, "Joining date is required"],
     },
     status: {
       type: String,

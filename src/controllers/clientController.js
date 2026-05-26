@@ -9,14 +9,20 @@ exports.createClient = async (req, res) => {
   try {
     const { clientName, companyName, email, phone, address, notes, password } = req.body;
 
-    if (!clientName || !email || !password) {
-      return res.status(400).json({ message: "clientName, email, and password are required" });
+    if (!clientName || !email || !password || !phone || !address) {
+      return res.status(400).json({ message: "clientName, email, phone, address, and password are required" });
     }
 
     // Check if email already taken in User collection
     const emailTaken = await User.findOne({ email: email.toLowerCase().trim() });
     if (emailTaken) {
       return res.status(400).json({ message: "A user with this email already exists" });
+    }
+
+    // Check if phone already taken
+    const phoneTaken = await User.findOne({ phone });
+    if (phoneTaken) {
+      return res.status(400).json({ message: "A user with this phone number already exists" });
     }
 
     const profileImage = req.file
@@ -114,6 +120,7 @@ exports.updateClient = async (req, res) => {
     }
 
  
+    // Check email duplicate (excluding current client's user)
     if (email && email.toLowerCase().trim() !== client.email) {
       const existing = await User.findOne({
         email: email.toLowerCase().trim(),
@@ -121,6 +128,14 @@ exports.updateClient = async (req, res) => {
       });
       if (existing) {
         return res.status(400).json({ message: "A user with this email already exists" });
+      }
+    }
+
+    // Check phone duplicate (excluding current client's user)
+    if (phone !== undefined && phone !== client.phone) {
+      const phoneTaken = await User.findOne({ phone, _id: { $ne: client.user } });
+      if (phoneTaken) {
+        return res.status(400).json({ message: "A user with this phone number already exists" });
       }
     }
 
@@ -149,7 +164,10 @@ exports.updateClient = async (req, res) => {
       client.email = email;
       if (client.user) await User.findByIdAndUpdate(client.user, { $set: { email: email.toLowerCase().trim() } });
     }
-    if (phone !== undefined) client.phone = phone;
+    if (phone !== undefined) {
+      client.phone = phone;
+      if (client.user) await User.findByIdAndUpdate(client.user, { $set: { phone } });
+    }
     if (address !== undefined) client.address = address;
     if (notes !== undefined) client.notes = notes;
 

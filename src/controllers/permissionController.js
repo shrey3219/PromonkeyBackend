@@ -1,4 +1,5 @@
 const Permission = require("../models/Permission");
+const Role = require("../models/Role");
 
 const VALID_ACTIONS = ["create", "read", "update", "delete"];
 
@@ -18,10 +19,10 @@ function parseActions(input) {
   return { actions };
 }
 
-// GET /api/permissions — flat list of all active permissions
+// GET /api/permissions — flat list of all permissions
 exports.getPermissions = async (_req, res) => {
   try {
-    const permissions = await Permission.find({ isActive: true }).sort({ module: 1 });
+    const permissions = await Permission.find().sort({ module: 1 });
     res.json(permissions);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -31,7 +32,7 @@ exports.getPermissions = async (_req, res) => {
 // GET /api/permissions/grouped — permissions grouped by module
 exports.getPermissionsGrouped = async (_req, res) => {
   try {
-    const permissions = await Permission.find({ isActive: true }).sort({ module: 1 });
+    const permissions = await Permission.find().sort({ module: 1 });
 
     const grouped = {};
     permissions.forEach((p) => {
@@ -129,20 +130,28 @@ exports.updatePermission = async (req, res) => {
   }
 };
 
-// DELETE /api/permissions/:id 
+// DELETE /api/permissions/:id
 exports.deletePermission = async (req, res) => {
   try {
-    const permission = await Permission.findByIdAndUpdate(
-      req.params.id,
-      { isActive: false },
-      { new: true }
-    );
-
+    const permission = await Permission.findById(req.params.id);
     if (!permission) {
       return res.status(404).json({ message: "Permission not found" });
     }
 
-    res.json({ message: "Permission deactivated", permission });
+    // Block deletion if any role is using this permission
+    const rolesUsingPermission = await Role.find({
+      permissions: req.params.id,
+    }).select("name");
+
+    if (rolesUsingPermission.length > 0) {
+      return res.status(400).json({
+        message: `Cannot delete. This permission is assigned to ${rolesUsingPermission.length} role(s): ${rolesUsingPermission.map((r) => r.name).join(", ")}`,
+      });
+    }
+
+    await Permission.findByIdAndDelete(req.params.id);
+
+    res.json({ message: "Permission deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
