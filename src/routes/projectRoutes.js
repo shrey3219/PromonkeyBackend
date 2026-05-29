@@ -8,7 +8,6 @@ const {
   updateProject,
   deleteProject,
   deleteRequirementDoc,
-  updatePhases,
 } = require("../controllers/projectController");
 
 // Create project — admin only, supports up to 10 requirement doc uploads
@@ -34,9 +33,6 @@ router.put(
   uploadProjectDocs.array("requirementDocs", 10),
   updateProject
 );
-
-// Update phases only
-router.put("/:id/phases", protect, authorize("admin"), updatePhases);
 
 // Delete a single requirement doc from a project
 router.delete("/:id/docs/:docId", protect, authorize("admin"), deleteRequirementDoc);

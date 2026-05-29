@@ -26,6 +26,10 @@ app.use("/api/roles", require("./src/routes/roleRoutes"));
 app.use("/api/employees", require("./src/routes/employeeRoutes"));
 app.use("/api/clients", require("./src/routes/clientRoutes"));
 app.use("/api/projects", require("./src/routes/projectRoutes"));
+app.use("/api/phases", require("./src/routes/phaseRoutes"));
+app.use("/api/tasks", require("./src/routes/taskRoutes"));
+app.use("/api/time-entries", require("./src/routes/timeEntryRoutes"));
+app.use("/api/stats", require("./src/routes/statsRoutes"));
  
 const PORT = process.env.PORT || 6969;
  

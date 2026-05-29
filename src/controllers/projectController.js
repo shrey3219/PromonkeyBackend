@@ -1,4 +1,5 @@
 const Project = require("../models/Project");
+const Phase = require("../models/Phase");
 const Client = require("../models/Client");
 const { cloudinary } = require("../config/cloudinary");
 
@@ -7,6 +8,21 @@ const populateProject = (query) =>
   query
     .populate("client", "clientName companyName email phone profileImage")
     .populate("createdBy", "name email");
+
+// Fetch phases for a project with assignees populated
+const getProjectWithPhases = async (projectDoc) => {
+  const phases = await Phase.find({ project: projectDoc._id })
+    .sort({ order: 1 })
+    .populate({
+      path: "assignees",
+      populate: [
+        { path: "user", select: "name email profileImage" },
+        { path: "role", select: "name" },
+      ],
+    });
+
+  return { ...projectDoc.toObject(), phases };
+};
 
 // ─── POST /api/projects ────────────────────────────────────────────────────────
 exports.createProject = async (req, res) => {
@@ -19,7 +35,7 @@ exports.createProject = async (req, res) => {
       estimatedEndDate,
       status,
       priority,
-      phases, // JSON string or array
+      phases, // optional array of phase objects
     } = req.body;
 
     if (!name || !client || !startDate || !estimatedEndDate) {
@@ -32,16 +48,6 @@ exports.createProject = async (req, res) => {
     const clientExists = await Client.findById(client);
     if (!clientExists) {
       return res.status(404).json({ message: "Client not found" });
-    }
-
-    // Parse phases if sent as JSON string (multipart form)
-    let parsedPhases = [];
-    if (phases) {
-      try {
-        parsedPhases = typeof phases === "string" ? JSON.parse(phases) : phases;
-      } catch {
-        return res.status(400).json({ message: "Invalid phases format. Must be a JSON array." });
-      }
     }
 
     // Build requirementDocs from uploaded files
@@ -60,13 +66,28 @@ exports.createProject = async (req, res) => {
       estimatedEndDate,
       status,
       priority,
-      phases: parsedPhases,
       requirementDocs,
       createdBy: req.user._id,
     });
 
+    // If phases passed along with project creation, create them too
+    if (phases && Array.isArray(phases) && phases.length > 0) {
+      const phaseDocs = phases.map((p, index) => ({
+        project: project._id,
+        name: p.name,
+        order: p.order ?? index + 1,
+        estimatedDuration: p.estimatedDuration ?? 0,
+        estimatedEndDate: p.estimatedEndDate,
+        actualStart: p.actualStart,
+        status: p.status ?? "not_started",
+        assignees: p.assignees ?? [],
+      }));
+      await Phase.insertMany(phaseDocs);
+    }
+
     const populated = await populateProject(Project.findById(project._id));
-    res.status(201).json(populated);
+    const result = await getProjectWithPhases(populated);
+    res.status(201).json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -95,7 +116,9 @@ exports.getProjects = async (req, res) => {
       Project.find(filter).sort({ createdAt: -1 })
     );
 
-    res.json(projects);
+    // Attach phases to each project
+    const result = await Promise.all(projects.map(getProjectWithPhases));
+    res.json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -117,7 +140,9 @@ exports.getProjectById = async (req, res) => {
       }
     }
 
-    res.json(project);
+    // Attach phases with assignees
+    const result = await getProjectWithPhases(project);
+    res.json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -135,7 +160,6 @@ exports.updateProject = async (req, res) => {
       actualEndDate,
       status,
       priority,
-      phases,
     } = req.body;
 
     const project = await Project.findById(req.params.id);
@@ -159,14 +183,6 @@ exports.updateProject = async (req, res) => {
     if (status !== undefined) project.status = status;
     if (priority !== undefined) project.priority = priority;
 
-    if (phases !== undefined) {
-      try {
-        project.phases = typeof phases === "string" ? JSON.parse(phases) : phases;
-      } catch {
-        return res.status(400).json({ message: "Invalid phases format. Must be a JSON array." });
-      }
-    }
-
     // Append any newly uploaded docs
     if (req.files && req.files.length > 0) {
       const newDocs = req.files.map((file) => ({
@@ -180,7 +196,8 @@ exports.updateProject = async (req, res) => {
 
     await project.save();
     const populated = await populateProject(Project.findById(project._id));
-    res.json(populated);
+    const result = await getProjectWithPhases(populated);
+    res.json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -237,28 +254,4 @@ exports.deleteRequirementDoc = async (req, res) => {
   }
 };
 
-// ─── PUT /api/projects/:id/phases ──────────────────────────────────────────────
-// Replace entire phases array
-exports.updatePhases = async (req, res) => {
-  try {
-    const { phases } = req.body;
-    if (!Array.isArray(phases)) {
-      return res.status(400).json({ message: "phases must be an array" });
-    }
-
-    const project = await Project.findByIdAndUpdate(
-      req.params.id,
-      { $set: { phases } },
-      { new: true, runValidators: true }
-    );
-
-    if (!project) {
-      return res.status(404).json({ message: "Project not found" });
-    }
-
-    const populated = await populateProject(Project.findById(project._id));
-    res.json(populated);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+// Phases are now a separate collection — use /api/phases routes instead

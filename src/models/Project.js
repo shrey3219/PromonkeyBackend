@@ -1,34 +1,7 @@
 const mongoose = require("mongoose");
 
-const phaseSchema = new mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    description: {
-      type: String,
-      trim: true,
-    },
-    startDate: {
-      type: Date,
-    },
-    endDate: {
-      type: Date,
-    },
-    status: {
-      type: String,
-      enum: ["not_started", "in_progress", "completed", "on_hold"],
-      default: "not_started",
-    },
-    order: {
-      type: Number,
-      default: 0,
-    },
-  },
-  { _id: true }
-);
+// Phases are now a separate collection (see Phase.js)
+// Use GET /api/phases?project=:id to fetch phases for a project
 
 const requirementDocSchema = new mongoose.Schema(
   {
@@ -94,7 +67,6 @@ const projectSchema = new mongoose.Schema(
       enum: ["low", "medium", "high", "critical"],
       default: "medium",
     },
-    phases: [phaseSchema],
     requirementDocs: [requirementDocSchema],
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
