@@ -70,9 +70,19 @@ exports.createProject = async (req, res) => {
       createdBy: req.user._id,
     });
 
+    // Parse phases — string agar FormData se aaya ho (multipart), array agar JSON se
+    let parsedPhases = phases;
+    if (typeof phases === "string") {
+      try {
+        parsedPhases = JSON.parse(phases);
+      } catch {
+        return res.status(400).json({ message: "Invalid phases format" });
+      }
+    }
+
     // If phases passed along with project creation, create them too
-    if (phases && Array.isArray(phases) && phases.length > 0) {
-      const phaseDocs = phases.map((p, index) => ({
+    if (parsedPhases && Array.isArray(parsedPhases) && parsedPhases.length > 0) {
+      const phaseDocs = parsedPhases.map((p, index) => ({
         project: project._id,
         name: p.name,
         order: p.order ?? index + 1,
