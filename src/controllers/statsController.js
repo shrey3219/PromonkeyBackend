@@ -53,11 +53,20 @@ exports.getProjectStats = async (req, res) => {
 
         // Task summary for this phase
         const tasks = await Task.find({ phase: phase._id });
+        const completedCount = tasks.filter((t) => t.status === "completed").length;
+        const totalCount = tasks.length;
+
+        // Phase progress — task completion based
+        const phaseProgress = totalCount > 0
+          ? Math.round((completedCount / totalCount) * 100)
+          : 0;
+
         const taskSummary = {
-          total: tasks.length,
-          completed: tasks.filter((t) => t.status === "completed").length,
+          total: totalCount,
+          completed: completedCount,
           inProgress: tasks.filter((t) => t.status === "in_progress").length,
           notStarted: tasks.filter((t) => t.status === "not_started").length,
+          progressPercent: phaseProgress,
         };
 
         return {
@@ -70,6 +79,7 @@ exports.getProjectStats = async (req, res) => {
           hoursOverrun,
           isDelayed,
           isAtRisk,
+          progressPercent: phaseProgress,
           estimatedEndDate: phase.estimatedEndDate,
           actualStart: phase.actualStart,
           actualEnd: phase.actualEnd,
@@ -100,6 +110,13 @@ exports.getProjectStats = async (req, res) => {
       0
     );
 
+    // Total tasks across all phases for project progress
+    const totalTasksAll = phaseStats.reduce((sum, p) => sum + p.taskSummary.total, 0);
+    const completedTasksAll = phaseStats.reduce((sum, p) => sum + p.taskSummary.completed, 0);
+    const projectProgress = totalTasksAll > 0
+      ? Math.round((completedTasksAll / totalTasksAll) * 100)
+      : 0;
+
     res.json({
       project: {
         _id: project._id,
@@ -117,6 +134,9 @@ exports.getProjectStats = async (req, res) => {
         delayedPhases: phaseStats.filter((p) => p.isDelayed).length,
         atRiskPhases: phaseStats.filter((p) => p.isAtRisk).length,
         projectAtRisk,
+        progressPercent: projectProgress,
+        totalTasks: totalTasksAll,
+        completedTasks: completedTasksAll,
         totalEstimatedHours,
         totalActualHours,
         hoursOverrun: totalActualHours > totalEstimatedHours

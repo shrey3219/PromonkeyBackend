@@ -18,12 +18,13 @@ exports.createPhase = async (req, res) => {
     const {
       project,
       name,
+      description,
       order,
       estimatedDuration,
       estimatedEndDate,
       actualStart,
       status,
-      assignees, // array of Employee _ids
+      assignees,
     } = req.body;
 
     if (!project || !name) {
@@ -47,6 +48,7 @@ exports.createPhase = async (req, res) => {
     const phase = await Phase.create({
       project,
       name,
+      description,
       order,
       estimatedDuration,
       estimatedEndDate,
@@ -96,6 +98,7 @@ exports.updatePhase = async (req, res) => {
   try {
     const {
       name,
+      description,
       order,
       estimatedDuration,
       estimatedEndDate,
@@ -111,6 +114,7 @@ exports.updatePhase = async (req, res) => {
     }
 
     if (name !== undefined) phase.name = name;
+    if (description !== undefined) phase.description = description;
     if (order !== undefined) phase.order = order;
     if (estimatedDuration !== undefined) phase.estimatedDuration = estimatedDuration;
     if (estimatedEndDate !== undefined) phase.estimatedEndDate = estimatedEndDate;

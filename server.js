@@ -30,6 +30,7 @@ app.use("/api/phases", require("./src/routes/phaseRoutes"));
 app.use("/api/tasks", require("./src/routes/taskRoutes"));
 app.use("/api/time-entries", require("./src/routes/timeEntryRoutes"));
 app.use("/api/stats", require("./src/routes/statsRoutes"));
+app.use("/api/upload", require("./src/routes/uploadRoutes"));
  
 const PORT = process.env.PORT || 6969;
  

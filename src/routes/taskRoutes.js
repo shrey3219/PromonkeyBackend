@@ -6,7 +6,6 @@ const {
   getTaskById,
   updateTask,
   deleteTask,
-  toggleStep,
 } = require("../controllers/taskController");
 
 // Create task — admin only
@@ -20,9 +19,6 @@ router.get("/:id", protect, checkPermission("Projects", "read"), getTaskById);
 
 // Update task — admin only
 router.put("/:id", protect, authorize("admin"), updateTask);
-
-// Toggle step completion — admin or assigned employee
-router.patch("/:id/steps/:stepId", protect, toggleStep);
 
 // Delete task — admin only
 router.delete("/:id", protect, authorize("admin"), deleteTask);

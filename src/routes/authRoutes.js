@@ -1,15 +1,18 @@
 const router = require("express").Router();
-const { register, login, employeeLogin, clientLogin, updateProfile } = require("../controllers/authController");
+const { register, login, employeeLogin, clientLogin, updateProfile, unifiedLogin } = require("../controllers/authController");
 const { uploadAdmin } = require("../config/cloudinary");
 const { protect } = require("../middleware/authMiddleware");
 
-// Admin register 
+// Unified login — admin, employee, client sab ek hi endpoint se
+router.post("/unified-login", unifiedLogin);
+
+// Role-specific login endpoints (alag bhi available hain)
 router.post("/register", uploadAdmin.single("profileImage"), register);
 router.post("/login", login);
 router.post("/employee-login", employeeLogin);
 router.post("/client-login", clientLogin);
 
-// Profile update 
+// Profile update
 router.put("/update-profile", protect, uploadAdmin.single("profileImage"), updateProfile);
 
 module.exports = router;

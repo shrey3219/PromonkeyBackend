@@ -229,6 +229,119 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
+// ─── POST /api/auth/unified-login ─────────────────────────────────────────────
+// Ek hi endpoint — email/password se login, role auto detect hoga
+exports.unifiedLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password are required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
+
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    const baseUser = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      profileImage: user.profileImage,
+    };
+
+    // ── Admin ──
+    if (user.role === "admin") {
+      return res.json({ token, user: baseUser });
+    }
+
+    // ── Employee ──
+    if (user.role === "employee") {
+      const emp = await Employee.findOne({ user: user._id })
+        .populate({
+          path: "role",
+          select: "name permissions parentRole isActive",
+          populate: { path: "permissions", select: "name module actions isActive" },
+        });
+
+      if (!emp) {
+        return res.status(403).json({ message: "No employee record found for this account" });
+      }
+      if (!emp.role || !emp.role.isActive) {
+        return res.status(403).json({ message: "Your role has been deactivated. Contact admin." });
+      }
+      if (emp.status === "Inactive") {
+        return res.status(403).json({ message: "Your account is inactive. Contact admin." });
+      }
+
+      // Build module permission map
+      const moduleMap = {};
+      (emp.role.permissions || []).forEach((p) => {
+        if (p.isActive) {
+          if (!moduleMap[p.module]) moduleMap[p.module] = [];
+          moduleMap[p.module].push(...(p.actions || []));
+        }
+      });
+
+      return res.json({
+        token,
+        user: baseUser,
+        employee: {
+          _id: emp._id,
+          employeeId: emp.employeeId,
+          department: emp.department,
+          joiningDate: emp.joiningDate,
+          status: emp.status,
+          role: { _id: emp.role._id, name: emp.role.name },
+          modules: moduleMap,
+        },
+      });
+    }
+
+    // ── Client ──
+    if (user.role === "client") {
+      const Client = require("../models/Client");
+      const client = await Client.findOne({ user: user._id })
+        .populate("createdBy", "name email");
+
+      if (!client) {
+        return res.status(403).json({ message: "No client record found for this account" });
+      }
+
+      return res.json({
+        token,
+        user: baseUser,
+        client: {
+          _id: client._id,
+          clientName: client.clientName,
+          companyName: client.companyName,
+          phone: client.phone,
+          address: client.address,
+          profileImage: client.profileImage,
+        },
+      });
+    }
+
+    res.status(400).json({ message: "Unknown role" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // Client login — for client portal app
 exports.clientLogin = async (req, res) => {
   try {

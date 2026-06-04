@@ -77,4 +77,7 @@ const uploadAdmin    = createUpload("promonkey/admins");
 // Project requirement docs upload
 const uploadProjectDocs = createDocUpload("promonkey/projects/docs");
 
-module.exports = { cloudinary, uploadEmployee, uploadClient, uploadAdmin, uploadProjectDocs };
+// Editor upload — images + documents for description fields
+const uploadEditorFile = createDocUpload("promonkey/editor");
+
+module.exports = { cloudinary, uploadEmployee, uploadClient, uploadAdmin, uploadProjectDocs, uploadEditorFile };

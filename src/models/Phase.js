@@ -12,6 +12,10 @@ const phaseSchema = new mongoose.Schema(
       required: [true, "Phase name is required"],
       trim: true,
     },
+    description: {
+      type: String,
+      trim: true,
+    },
     order: {
       type: Number,
       default: 0,

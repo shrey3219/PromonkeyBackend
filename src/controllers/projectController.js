@@ -1,5 +1,6 @@
 const Project = require("../models/Project");
 const Phase = require("../models/Phase");
+const Task = require("../models/Task");
 const Client = require("../models/Client");
 const { cloudinary } = require("../config/cloudinary");
 
@@ -9,7 +10,19 @@ const populateProject = (query) =>
     .populate("client", "clientName companyName email phone profileImage")
     .populate("createdBy", "name email");
 
-// Fetch phases for a project with assignees populated
+// Calculate progress from tasks
+const calcProgress = async (projectId) => {
+  const tasks = await Task.find({ project: projectId }, "status");
+  const total = tasks.length;
+  const completed = tasks.filter((t) => t.status === "completed").length;
+  return {
+    progressPercent: total > 0 ? Math.round((completed / total) * 100) : 0,
+    totalTasks: total,
+    completedTasks: completed,
+  };
+};
+
+// Fetch phases for a project with assignees populated + per-phase progress
 const getProjectWithPhases = async (projectDoc) => {
   const phases = await Phase.find({ project: projectDoc._id })
     .sort({ order: 1 })
@@ -21,7 +34,30 @@ const getProjectWithPhases = async (projectDoc) => {
       ],
     });
 
-  return { ...projectDoc.toObject(), phases };
+  // Add progressPercent to each phase
+  const phasesWithProgress = await Promise.all(
+    phases.map(async (phase) => {
+      const tasks = await Task.find({ phase: phase._id }, "status");
+      const total = tasks.length;
+      const completed = tasks.filter((t) => t.status === "completed").length;
+      const progressPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
+      return {
+        ...phase.toObject(),
+        progressPercent,
+        taskSummary: {
+          total,
+          completed,
+          inProgress: tasks.filter((t) => t.status === "in_progress").length,
+          notStarted: tasks.filter((t) => t.status === "not_started").length,
+        },
+      };
+    })
+  );
+
+  // Project-level progress
+  const progress = await calcProgress(projectDoc._id);
+
+  return { ...projectDoc.toObject(), ...progress, phases: phasesWithProgress };
 };
 
 // ─── POST /api/projects ────────────────────────────────────────────────────────
@@ -85,6 +121,7 @@ exports.createProject = async (req, res) => {
       const phaseDocs = parsedPhases.map((p, index) => ({
         project: project._id,
         name: p.name,
+        description: p.description,
         order: p.order ?? index + 1,
         estimatedDuration: p.estimatedDuration ?? 0,
         estimatedEndDate: p.estimatedEndDate,

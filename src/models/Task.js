@@ -1,13 +1,5 @@
 const mongoose = require("mongoose");
 
-const stepSchema = new mongoose.Schema(
-  {
-    title: { type: String, required: true, trim: true },
-    isCompleted: { type: Boolean, default: false },
-  },
-  { _id: true }
-);
-
 const taskSchema = new mongoose.Schema(
   {
     phase: {
@@ -29,7 +21,6 @@ const taskSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    // Single employee assigned to this task
     assignedTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Employee",
@@ -38,7 +29,6 @@ const taskSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    // Computed from TimeEntries — updated on every time log
     actualHoursLogged: {
       type: Number,
       default: 0,
@@ -51,7 +41,6 @@ const taskSchema = new mongoose.Schema(
       enum: ["not_started", "in_progress", "completed", "on_hold"],
       default: "not_started",
     },
-    steps: [stepSchema],
   },
   { timestamps: true }
 );

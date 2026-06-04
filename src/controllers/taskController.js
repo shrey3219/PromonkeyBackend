@@ -26,7 +26,6 @@ exports.createTask = async (req, res) => {
       estimatedHours,
       dueDate,
       status,
-      steps,
     } = req.body;
 
     if (!phase || !name) {
@@ -56,7 +55,6 @@ exports.createTask = async (req, res) => {
       estimatedHours,
       dueDate,
       status,
-      steps: steps || [],
     });
 
     const populated = await populateTask(Task.findById(task._id));
@@ -105,7 +103,6 @@ exports.updateTask = async (req, res) => {
       estimatedHours,
       dueDate,
       status,
-      steps,
     } = req.body;
 
     const task = await Task.findById(req.params.id);
@@ -128,7 +125,6 @@ exports.updateTask = async (req, res) => {
     if (estimatedHours !== undefined) task.estimatedHours = estimatedHours;
     if (dueDate !== undefined) task.dueDate = dueDate;
     if (status !== undefined) task.status = status;
-    if (steps !== undefined) task.steps = steps;
 
     await task.save();
     const populated = await populateTask(Task.findById(task._id));
@@ -146,29 +142,6 @@ exports.deleteTask = async (req, res) => {
       return res.status(404).json({ message: "Task not found" });
     }
     res.json({ message: "Task deleted successfully" });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// ─── PATCH /api/tasks/:id/steps/:stepId ───────────────────────────────────────
-// Toggle a single step's completion
-exports.toggleStep = async (req, res) => {
-  try {
-    const task = await Task.findById(req.params.id);
-    if (!task) {
-      return res.status(404).json({ message: "Task not found" });
-    }
-
-    const step = task.steps.id(req.params.stepId);
-    if (!step) {
-      return res.status(404).json({ message: "Step not found" });
-    }
-
-    step.isCompleted = !step.isCompleted;
-    await task.save();
-
-    res.json(task);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
