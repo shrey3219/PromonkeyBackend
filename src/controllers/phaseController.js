@@ -12,7 +12,7 @@ const populatePhase = (query) =>
     ],
   });
 
-// ─── POST /api/phases ──────────────────────────────────────────────────────────
+// ─── POST /api/phases 
 exports.createPhase = async (req, res) => {
   try {
     const {
@@ -64,7 +64,7 @@ exports.createPhase = async (req, res) => {
   }
 };
 
-// ─── GET /api/phases?project=:projectId ───────────────────────────────────────
+// ─── GET /api/phases?project=:projectId 
 exports.getPhases = async (req, res) => {
   try {
     const filter = {};
@@ -80,7 +80,7 @@ exports.getPhases = async (req, res) => {
   }
 };
 
-// ─── GET /api/phases/:id ───────────────────────────────────────────────────────
+// ─── GET /api/phases/:id 
 exports.getPhaseById = async (req, res) => {
   try {
     const phase = await populatePhase(Phase.findById(req.params.id));
@@ -93,7 +93,7 @@ exports.getPhaseById = async (req, res) => {
   }
 };
 
-// ─── PUT /api/phases/:id ───────────────────────────────────────────────────────
+// ─── PUT /api/phases/:id 
 exports.updatePhase = async (req, res) => {
   try {
     const {
@@ -140,7 +140,7 @@ exports.updatePhase = async (req, res) => {
   }
 };
 
-// ─── DELETE /api/phases/:id ────────────────────────────────────────────────────
+// ─── DELETE /api/phases/:id
 exports.deletePhase = async (req, res) => {
   try {
     const phase = await Phase.findByIdAndDelete(req.params.id);

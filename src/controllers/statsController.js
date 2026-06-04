@@ -3,20 +3,19 @@ const Phase = require("../models/Phase");
 const Task = require("../models/Task");
 const TimeEntry = require("../models/TimeEntry");
 
-// Helper — calculate working days between two dates (Mon–Fri)
 const getWorkingDays = (startDate, endDate) => {
   let count = 0;
   const current = new Date(startDate);
   const end = new Date(endDate);
   while (current <= end) {
     const day = current.getDay();
-    if (day !== 0 && day !== 6) count++; // skip Sun(0) and Sat(6)
+    if (day !== 0 && day !== 6) count++; 
     current.setDate(current.getDate() + 1);
   }
   return count;
 };
 
-// ─── GET /api/stats/project/:projectId ────────────────────────────────────────
+// ─── GET /api/stats/project/:projectId 
 exports.getProjectStats = async (req, res) => {
   try {
     const project = await Project.findById(req.params.projectId)
@@ -153,7 +152,7 @@ exports.getProjectStats = async (req, res) => {
   }
 };
 
-// ─── GET /api/stats/employee/:employeeId ──────────────────────────────────────
+// ─── GET /api/stats/employee/:employeeId 
 // How many hours an employee has logged across tasks/projects
 exports.getEmployeeStats = async (req, res) => {
   try {

@@ -53,7 +53,7 @@ exports.createEmployee = async (req, res) => {
       profileImage,
     });
 
-    // Create Employee — holds only work-related fields + refs to User and Role
+    // Create Employee
     let employee;
     try {
       employee = await Employee.create({
@@ -64,10 +64,8 @@ exports.createEmployee = async (req, res) => {
         user: user._id,
       });
     } catch (empError) {
-      // Rollback: delete the user we just created so it doesn't become orphaned
       await User.findByIdAndDelete(user._id);
 
-      // Also delete uploaded image from Cloudinary if any
       if (req.file && req.file.filename) {
         await cloudinary.uploader.destroy(req.file.filename).catch(() => {});
       }
@@ -161,7 +159,6 @@ exports.updateEmployee = async (req, res) => {
       }
     }
 
-    // Check employeeId not already taken by another employee
     if (employeeId !== undefined) {
       const empIdTaken = await Employee.findOne({ employeeId, _id: { $ne: req.params.id } });
       if (empIdTaken) {
@@ -169,7 +166,6 @@ exports.updateEmployee = async (req, res) => {
       }
     }
 
-    // Check phone not already taken by another user
     if (phone !== undefined) {
       const existing = await Employee.findById(req.params.id).populate("user", "_id");
       if (existing && existing.user) {
@@ -181,7 +177,6 @@ exports.updateEmployee = async (req, res) => {
       }
     }
 
-    // Build employee update object
     const updateFields = {};
     if (employeeId !== undefined) updateFields.employeeId = employeeId;
     if (department !== undefined) updateFields.department = department;
@@ -229,7 +224,7 @@ exports.updateEmployee = async (req, res) => {
   }
 };
 
-// DELETE /api/employees/:id — deletes employee + linked user account + Cloudinary image
+// DELETE /api/employees/:id 
 exports.deleteEmployee = async (req, res) => {
   try {
     const employee = await Employee.findByIdAndDelete(req.params.id);
@@ -239,7 +234,6 @@ exports.deleteEmployee = async (req, res) => {
 
     if (employee.user) {
       const user = await User.findByIdAndDelete(employee.user);
-      // Delete profile image from Cloudinary if exists
       if (user && user.profileImage && user.profileImage.publicId) {
         await cloudinary.uploader.destroy(user.profileImage.publicId).catch(() => {});
       }

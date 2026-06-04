@@ -13,7 +13,6 @@ exports.createClient = async (req, res) => {
       return res.status(400).json({ message: "clientName, email, phone, address, and password are required" });
     }
 
-    // Check if email already taken in User collection
     const emailTaken = await User.findOne({ email: email.toLowerCase().trim() });
     if (emailTaken) {
       return res.status(400).json({ message: "A user with this email already exists" });
@@ -39,7 +38,6 @@ exports.createClient = async (req, res) => {
       profileImage,
     });
 
-    // Create Client record
     let client;
     try {
       client = await Client.create({
@@ -54,7 +52,6 @@ exports.createClient = async (req, res) => {
         createdBy: req.user._id,
       });
     } catch (clientError) {
-      // Rollback: delete user if client creation fails
       await User.findByIdAndDelete(user._id);
       if (req.file && req.file.filename) {
         await cloudinary.uploader.destroy(req.file.filename).catch(() => {});
@@ -119,8 +116,6 @@ exports.updateClient = async (req, res) => {
       return res.status(404).json({ message: "Client not found" });
     }
 
- 
-    // Check email duplicate (excluding current client's user)
     if (email && email.toLowerCase().trim() !== client.email) {
       const existing = await User.findOne({
         email: email.toLowerCase().trim(),
@@ -131,7 +126,7 @@ exports.updateClient = async (req, res) => {
       }
     }
 
-    // Check phone duplicate (excluding current client's user)
+
     if (phone !== undefined && phone !== client.phone) {
       const phoneTaken = await User.findOne({ phone, _id: { $ne: client.user } });
       if (phoneTaken) {
@@ -139,7 +134,6 @@ exports.updateClient = async (req, res) => {
       }
     }
 
-    // Handle new profile image
     if (req.file) {
       if (client.profileImage && client.profileImage.publicId) {
         await cloudinary.uploader.destroy(client.profileImage.publicId).catch(() => {});
@@ -147,7 +141,6 @@ exports.updateClient = async (req, res) => {
       const newImage = { url: req.file.path, publicId: req.file.filename };
       client.profileImage = newImage;
 
-      // Sync image to linked User as well
       if (client.user) {
         await User.findByIdAndUpdate(client.user, {
           $set: { "profileImage.url": req.file.path, "profileImage.publicId": req.file.filename },

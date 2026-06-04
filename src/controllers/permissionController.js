@@ -19,7 +19,7 @@ function parseActions(input) {
   return { actions };
 }
 
-// GET /api/permissions — flat list of all permissions
+// GET /api/permissions 
 exports.getPermissions = async (_req, res) => {
   try {
     const permissions = await Permission.find().sort({ module: 1 });
@@ -29,7 +29,7 @@ exports.getPermissions = async (_req, res) => {
   }
 };
 
-// GET /api/permissions/grouped — permissions grouped by module
+// GET /api/permissions/grouped 
 exports.getPermissionsGrouped = async (_req, res) => {
   try {
     const permissions = await Permission.find().sort({ module: 1 });
@@ -67,7 +67,6 @@ exports.createPermission = async (req, res) => {
     const { actions: parsedActions, error } = parseActions(actions);
     if (error) return res.status(400).json({ message: error });
 
-    // Name uniqueness check only if name is provided
     if (name) {
       const existing = await Permission.findOne({ name: name.trim() });
       if (existing) {
@@ -111,7 +110,7 @@ exports.updatePermission = async (req, res) => {
       newActions = parsedActions;
     }
 
-    // Name uniqueness (excluding self)
+    // Name uniqueness
     if (name) {
       const nameTaken = await Permission.findOne({ name: newName, _id: { $ne: req.params.id } });
       if (nameTaken) {

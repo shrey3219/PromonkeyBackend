@@ -146,13 +146,12 @@ exports.updateRole = async (req, res) => {
   }
 };
 
-// DELETE /api/roles/:id — hard delete
+// DELETE /api/roles/:id 
 exports.deleteRole = async (req, res) => {
   try {
     const role = await Role.findById(req.params.id);
     if (!role) return res.status(404).json({ message: "Role not found" });
 
-    // Block if child roles exist
     const children = await Role.find({ parentRole: req.params.id });
     if (children.length > 0) {
       return res.status(400).json({
@@ -160,7 +159,6 @@ exports.deleteRole = async (req, res) => {
       });
     }
 
-    // Block if any employee is assigned this role
     const employeesUsingRole = await Employee.find({
       role: req.params.id,
     }).select("employeeId");

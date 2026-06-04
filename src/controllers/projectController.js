@@ -4,7 +4,6 @@ const Task = require("../models/Task");
 const Client = require("../models/Client");
 const { cloudinary } = require("../config/cloudinary");
 
-// ─── Helper ────────────────────────────────────────────────────────────────────
 const populateProject = (query) =>
   query
     .populate("client", "clientName companyName email phone profileImage")
@@ -60,7 +59,7 @@ const getProjectWithPhases = async (projectDoc) => {
   return { ...projectDoc.toObject(), ...progress, phases: phasesWithProgress };
 };
 
-// ─── POST /api/projects ────────────────────────────────────────────────────────
+// ─── POST /api/projects 
 exports.createProject = async (req, res) => {
   try {
     const {
@@ -71,7 +70,7 @@ exports.createProject = async (req, res) => {
       estimatedEndDate,
       status,
       priority,
-      phases, // optional array of phase objects
+      phases, 
     } = req.body;
 
     if (!name || !client || !startDate || !estimatedEndDate) {
@@ -106,7 +105,7 @@ exports.createProject = async (req, res) => {
       createdBy: req.user._id,
     });
 
-    // Parse phases — string agar FormData se aaya ho (multipart), array agar JSON se
+    // Parse phases 
     let parsedPhases = phases;
     if (typeof phases === "string") {
       try {
@@ -116,7 +115,7 @@ exports.createProject = async (req, res) => {
       }
     }
 
-    // If phases passed along with project creation, create them too
+  
     if (parsedPhases && Array.isArray(parsedPhases) && parsedPhases.length > 0) {
       const phaseDocs = parsedPhases.map((p, index) => ({
         project: project._id,
@@ -140,12 +139,11 @@ exports.createProject = async (req, res) => {
   }
 };
 
-// ─── GET /api/projects ─────────────────────────────────────────────────────────
+// ─── GET /api/projects
 exports.getProjects = async (req, res) => {
   try {
     const filter = {};
 
-    // If logged-in user is a client, only show their projects
     if (req.user.role === "client") {
       const clientRecord = await Client.findOne({ user: req.user._id });
       if (!clientRecord) {
@@ -154,7 +152,6 @@ exports.getProjects = async (req, res) => {
       filter.client = clientRecord._id;
     }
 
-    // Optional query filters
     if (req.query.status) filter.status = req.query.status;
     if (req.query.priority) filter.priority = req.query.priority;
     if (req.query.client && req.user.role !== "client") filter.client = req.query.client;
@@ -171,7 +168,7 @@ exports.getProjects = async (req, res) => {
   }
 };
 
-// ─── GET /api/projects/:id ─────────────────────────────────────────────────────
+// ─── GET /api/projects/:id 
 exports.getProjectById = async (req, res) => {
   try {
     const project = await populateProject(Project.findById(req.params.id));
@@ -195,7 +192,7 @@ exports.getProjectById = async (req, res) => {
   }
 };
 
-// ─── PUT /api/projects/:id ─────────────────────────────────────────────────────
+// ─── PUT /api/projects/:id 
 exports.updateProject = async (req, res) => {
   try {
     const {
@@ -230,7 +227,6 @@ exports.updateProject = async (req, res) => {
     if (status !== undefined) project.status = status;
     if (priority !== undefined) project.priority = priority;
 
-    // Append any newly uploaded docs
     if (req.files && req.files.length > 0) {
       const newDocs = req.files.map((file) => ({
         name: file.originalname,
@@ -250,7 +246,7 @@ exports.updateProject = async (req, res) => {
   }
 };
 
-// ─── DELETE /api/projects/:id ──────────────────────────────────────────────────
+// ─── DELETE /api/projects/:id 
 exports.deleteProject = async (req, res) => {
   try {
     const project = await Project.findByIdAndDelete(req.params.id);
@@ -258,7 +254,6 @@ exports.deleteProject = async (req, res) => {
       return res.status(404).json({ message: "Project not found" });
     }
 
-    // Delete all requirement docs from Cloudinary
     const deletePromises = project.requirementDocs.map((doc) => {
       const isImage = doc.fileType && doc.fileType.startsWith("image/");
       return cloudinary.uploader
@@ -273,7 +268,7 @@ exports.deleteProject = async (req, res) => {
   }
 };
 
-// ─── DELETE /api/projects/:id/docs/:docId ──────────────────────────────────────
+// ─── DELETE /api/projects/:id/docs/:docId
 exports.deleteRequirementDoc = async (req, res) => {
   try {
     const project = await Project.findById(req.params.id);
@@ -286,7 +281,7 @@ exports.deleteRequirementDoc = async (req, res) => {
       return res.status(404).json({ message: "Document not found" });
     }
 
-    // Remove from Cloudinary
+
     const isImage = doc.fileType && doc.fileType.startsWith("image/");
     await cloudinary.uploader
       .destroy(doc.publicId, { resource_type: isImage ? "image" : "raw" })
@@ -301,4 +296,3 @@ exports.deleteRequirementDoc = async (req, res) => {
   }
 };
 
-// Phases are now a separate collection — use /api/phases routes instead

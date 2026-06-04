@@ -2,7 +2,7 @@ const Task = require("../models/Task");
 const Phase = require("../models/Phase");
 const Employee = require("../models/Employee");
 
-// Helper — populate task refs
+// Helper 
 const populateTask = (query) =>
   query
     .populate("phase", "name status")
@@ -15,7 +15,7 @@ const populateTask = (query) =>
       ],
     });
 
-// ─── POST /api/tasks ───────────────────────────────────────────────────────────
+// ─── POST /api/tasks
 exports.createTask = async (req, res) => {
   try {
     const {
@@ -32,7 +32,6 @@ exports.createTask = async (req, res) => {
       return res.status(400).json({ message: "phase and name are required" });
     }
 
-    // Get phase to pull project ref
     const phaseDoc = await Phase.findById(phase);
     if (!phaseDoc) {
       return res.status(404).json({ message: "Phase not found" });
@@ -64,7 +63,7 @@ exports.createTask = async (req, res) => {
   }
 };
 
-// ─── GET /api/tasks?phase=:phaseId&project=:projectId&assignedTo=:empId ────────
+// ─── GET /api/tasks?phase=:phaseId&project=:projectId&assignedTo=:empId 
 exports.getTasks = async (req, res) => {
   try {
     const filter = {};
@@ -80,7 +79,7 @@ exports.getTasks = async (req, res) => {
   }
 };
 
-// ─── GET /api/tasks/:id ────────────────────────────────────────────────────────
+// ─── GET /api/tasks/:id 
 exports.getTaskById = async (req, res) => {
   try {
     const task = await populateTask(Task.findById(req.params.id));
@@ -93,7 +92,7 @@ exports.getTaskById = async (req, res) => {
   }
 };
 
-// ─── PUT /api/tasks/:id ────────────────────────────────────────────────────────
+// ─── PUT /api/tasks/:id 
 exports.updateTask = async (req, res) => {
   try {
     const {
@@ -134,7 +133,7 @@ exports.updateTask = async (req, res) => {
   }
 };
 
-// ─── DELETE /api/tasks/:id ─────────────────────────────────────────────────────
+// ─── DELETE /api/tasks/:id 
 exports.deleteTask = async (req, res) => {
   try {
     const task = await Task.findByIdAndDelete(req.params.id);

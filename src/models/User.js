@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
 
-
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -19,7 +18,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
       unique: true,
-      sparse: true,  // allows multiple docs without phone (null/undefined)
+      sparse: true,  
     },
     password: {
       type: String,

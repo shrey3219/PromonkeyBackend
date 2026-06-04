@@ -3,7 +3,7 @@ const Task = require("../models/Task");
 const Phase = require("../models/Phase");
 const Employee = require("../models/Employee");
 
-// Helper — populate time entry refs
+// Helper 
 const populateEntry = (query) =>
   query
     .populate("task", "name status")
@@ -17,7 +17,7 @@ const populateEntry = (query) =>
       ],
     });
 
-// ─── POST /api/time-entries ────────────────────────────────────────────────────
+// ─── POST /api/time-entries 
 // Employee logs time on a task
 exports.logTime = async (req, res) => {
   try {
@@ -64,8 +64,7 @@ exports.logTime = async (req, res) => {
   }
 };
 
-// ─── GET /api/time-entries ─────────────────────────────────────────────────────
-// Query by task, phase, project, or employee
+// ─── GET /api/time-entries 
 exports.getTimeEntries = async (req, res) => {
   try {
     const filter = {};
@@ -83,7 +82,7 @@ exports.getTimeEntries = async (req, res) => {
   }
 };
 
-// ─── DELETE /api/time-entries/:id ─────────────────────────────────────────────
+// ─── DELETE /api/time-entries/:id 
 exports.deleteTimeEntry = async (req, res) => {
   try {
     const entry = await TimeEntry.findByIdAndDelete(req.params.id);

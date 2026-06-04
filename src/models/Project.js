@@ -1,8 +1,5 @@
 const mongoose = require("mongoose");
 
-// Phases are now a separate collection (see Phase.js)
-// Use GET /api/phases?project=:id to fetch phases for a project
-
 const requirementDocSchema = new mongoose.Schema(
   {
     name: {

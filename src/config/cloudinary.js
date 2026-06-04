@@ -8,7 +8,6 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Factory — creates a multer upload instance for a given Cloudinary folder (images only)
 const createUpload = (folder) => {
   const storage = new CloudinaryStorage({
     cloudinary,
@@ -32,7 +31,6 @@ const createUpload = (folder) => {
   });
 };
 
-// Factory — creates a multer upload instance for documents (pdf, docx, images, etc.)
 const createDocUpload = (folder) => {
   const storage = new CloudinaryStorage({
     cloudinary,

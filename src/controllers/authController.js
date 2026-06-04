@@ -25,7 +25,6 @@ exports.register = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Optional profile image via Cloudinary
     const profileImage = req.file
       ? { url: req.file.path, publicId: req.file.filename }
       : { url: "", publicId: "" };
@@ -64,7 +63,6 @@ exports.login = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    // Only admin can use this endpoint
     if (user.role !== "admin") {
       return res.status(403).json({ message: "Access denied. Use the employee login endpoint." });
     }
@@ -95,7 +93,6 @@ exports.login = async (req, res) => {
   }
 };
 
-// Employee login — separate endpoint for mobile app
 exports.employeeLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -109,7 +106,6 @@ exports.employeeLogin = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    // Only employees can use this endpoint
     if (user.role !== "employee") {
       return res.status(403).json({ message: "Access denied. Use the admin login endpoint." });
     }
@@ -181,7 +177,6 @@ exports.employeeLogin = async (req, res) => {
   }
 };
 
-// PUT /api/auth/update-profile — logged-in user (admin or employee) apna profile update kar sakta hai
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -191,9 +186,7 @@ exports.updateProfile = async (req, res) => {
     if (name !== undefined) updateFields.name = name;
     if (phone !== undefined) updateFields.phone = phone;
 
-    // Agar naya image upload hua hai
     if (req.file) {
-      // Purana image Cloudinary se delete karo
       const existingUser = await User.findById(userId).select("profileImage");
       if (existingUser?.profileImage?.publicId) {
         await cloudinary.uploader.destroy(existingUser.profileImage.publicId).catch(() => {});
@@ -229,8 +222,6 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// ─── POST /api/auth/unified-login ─────────────────────────────────────────────
-// Ek hi endpoint — email/password se login, role auto detect hoga
 exports.unifiedLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -288,7 +279,6 @@ exports.unifiedLogin = async (req, res) => {
         return res.status(403).json({ message: "Your account is inactive. Contact admin." });
       }
 
-      // Build module permission map
       const moduleMap = {};
       (emp.role.permissions || []).forEach((p) => {
         if (p.isActive) {
@@ -342,7 +332,6 @@ exports.unifiedLogin = async (req, res) => {
   }
 };
 
-// Client login — for client portal app
 exports.clientLogin = async (req, res) => {
   try {
     const { email, password } = req.body;

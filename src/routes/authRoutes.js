@@ -3,10 +3,9 @@ const { register, login, employeeLogin, clientLogin, updateProfile, unifiedLogin
 const { uploadAdmin } = require("../config/cloudinary");
 const { protect } = require("../middleware/authMiddleware");
 
-// Unified login — admin, employee, client sab ek hi endpoint se
 router.post("/unified-login", unifiedLogin);
 
-// Role-specific login endpoints (alag bhi available hain)
+// Role-specific login endpoints 
 router.post("/register", uploadAdmin.single("profileImage"), register);
 router.post("/login", login);
 router.post("/employee-login", employeeLogin);
