@@ -8,6 +8,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+//  profile image upload (images only, 2MB)
 const createUpload = (folder) => {
   const storage = new CloudinaryStorage({
     cloudinary,
@@ -20,7 +21,7 @@ const createUpload = (folder) => {
 
   return multer({
     storage,
-    limits: { fileSize: 2 * 1024 * 1024 }, // 2 MB
+    limits: { fileSize: 2 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
       if (file.mimetype.startsWith("image/")) {
         cb(null, true);
@@ -31,6 +32,7 @@ const createUpload = (folder) => {
   });
 };
 
+//  project docs upload (images + documents, 10MB)
 const createDocUpload = (folder) => {
   const storage = new CloudinaryStorage({
     cloudinary,
@@ -47,7 +49,7 @@ const createDocUpload = (folder) => {
 
   return multer({
     storage,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+    limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
       const allowed = [
         "image/jpeg", "image/png", "image/webp",
@@ -67,15 +69,56 @@ const createDocUpload = (folder) => {
   });
 };
 
-// Separate upload instances per role
-const uploadEmployee = createUpload("promonkey/employees");
-const uploadClient   = createUpload("promonkey/clients");
-const uploadAdmin    = createUpload("promonkey/admins");
+// editor upload (images + documents + videos, 100MB)
+const createEditorUpload = (folder) => {
+  const storage = new CloudinaryStorage({
+    cloudinary,
+    params: (req, file) => {
+      const isImage = file.mimetype.startsWith("image/");
+      const isVideo = file.mimetype.startsWith("video/");
+      return {
+        folder,
+        resource_type: isImage ? "image" : isVideo ? "video" : "raw",
+        public_id: `${Date.now()}-${file.originalname.replace(/\s+/g, "_")}`,
+      };
+    },
+  });
 
-// Project requirement docs upload
+  return multer({
+    storage,
+    limits: { fileSize: 100 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      const allowed = [
+        "image/jpeg", "image/png", "image/webp", "image/gif",
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/plain",
+        "video/mp4", "video/webm", "video/quicktime", "video/x-msvideo",
+      ];
+      if (allowed.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error("File type not allowed. Supported: images, PDF, DOC, DOCX, XLS, XLSX, TXT, MP4, WEBM, MOV, AVI"), false);
+      }
+    },
+  });
+};
+
+// Upload instances
+const uploadEmployee    = createUpload("promonkey/employees");
+const uploadClient      = createUpload("promonkey/clients");
+const uploadAdmin       = createUpload("promonkey/admins");
 const uploadProjectDocs = createDocUpload("promonkey/projects/docs");
+const uploadEditorFile  = createEditorUpload("promonkey/editor");
 
-// Editor upload — images + documents for description fields
-const uploadEditorFile = createDocUpload("promonkey/editor");
-
-module.exports = { cloudinary, uploadEmployee, uploadClient, uploadAdmin, uploadProjectDocs, uploadEditorFile };
+module.exports = {
+  cloudinary,
+  uploadEmployee,
+  uploadClient,
+  uploadAdmin,
+  uploadProjectDocs,
+  uploadEditorFile,
+};

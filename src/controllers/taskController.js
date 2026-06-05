@@ -1,8 +1,8 @@
 const Task = require("../models/Task");
 const Phase = require("../models/Phase");
 const Employee = require("../models/Employee");
+const Project = require("../models/Project");
 
-// Helper 
 const populateTask = (query) =>
   query
     .populate("phase", "name status")
@@ -37,7 +37,6 @@ exports.createTask = async (req, res) => {
       return res.status(404).json({ message: "Phase not found" });
     }
 
-    // Validate assignee if provided
     if (assignedTo) {
       const empExists = await Employee.findById(assignedTo);
       if (!empExists) {
@@ -72,6 +71,12 @@ exports.getTasks = async (req, res) => {
     if (req.query.assignedTo) filter.assignedTo = req.query.assignedTo;
     if (req.query.status) filter.status = req.query.status;
 
+    if (req.user.role === "employee") {
+      const empRecord = await Employee.findOne({ user: req.user._id });
+      if (!empRecord) return res.json([]);
+      filter.assignedTo = empRecord._id;
+    }
+
     const tasks = await populateTask(Task.find(filter).sort({ createdAt: 1 }));
     res.json(tasks);
   } catch (error) {
@@ -86,6 +91,14 @@ exports.getTaskById = async (req, res) => {
     if (!task) {
       return res.status(404).json({ message: "Task not found" });
     }
+
+    if (req.user.role === "employee") {
+      const empRecord = await Employee.findOne({ user: req.user._id });
+      if (!empRecord || !task.assignedTo || task.assignedTo._id.toString() !== empRecord._id.toString()) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
     res.json(task);
   } catch (error) {
     res.status(500).json({ message: error.message });

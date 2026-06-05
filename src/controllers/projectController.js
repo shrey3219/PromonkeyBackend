@@ -21,9 +21,13 @@ const calcProgress = async (projectId) => {
   };
 };
 
-// Fetch phases for a project with assignees populated + per-phase progress
-const getProjectWithPhases = async (projectDoc) => {
-  const phases = await Phase.find({ project: projectDoc._id })
+const getProjectWithPhases = async (projectDoc, employeeId = null) => {
+  let phaseQuery = Phase.find({ project: projectDoc._id });
+  if (employeeId) {
+    phaseQuery = Phase.find({ project: projectDoc._id, assignees: employeeId });
+  }
+
+  const phases = await phaseQuery
     .sort({ order: 1 })
     .populate({
       path: "assignees",
@@ -33,7 +37,6 @@ const getProjectWithPhases = async (projectDoc) => {
       ],
     });
 
-  // Add progressPercent to each phase
   const phasesWithProgress = await Promise.all(
     phases.map(async (phase) => {
       const tasks = await Task.find({ phase: phase._id }, "status");
@@ -53,7 +56,6 @@ const getProjectWithPhases = async (projectDoc) => {
     })
   );
 
-  // Project-level progress
   const progress = await calcProgress(projectDoc._id);
 
   return { ...projectDoc.toObject(), ...progress, phases: phasesWithProgress };
@@ -79,13 +81,11 @@ exports.createProject = async (req, res) => {
       });
     }
 
-    // Validate client exists
     const clientExists = await Client.findById(client);
     if (!clientExists) {
       return res.status(404).json({ message: "Client not found" });
     }
 
-    // Build requirementDocs from uploaded files
     const requirementDocs = (req.files || []).map((file) => ({
       name: file.originalname,
       url: file.path,
@@ -105,7 +105,6 @@ exports.createProject = async (req, res) => {
       createdBy: req.user._id,
     });
 
-    // Parse phases 
     let parsedPhases = phases;
     if (typeof phases === "string") {
       try {
@@ -143,25 +142,34 @@ exports.createProject = async (req, res) => {
 exports.getProjects = async (req, res) => {
   try {
     const filter = {};
+    let employeeId = null;
 
     if (req.user.role === "client") {
       const clientRecord = await Client.findOne({ user: req.user._id });
-      if (!clientRecord) {
-        return res.json([]);
-      }
+      if (!clientRecord) return res.json([]);
       filter.client = clientRecord._id;
+    }
+
+    if (req.user.role === "employee") {
+      const empRecord = await require("../models/Employee").findOne({ user: req.user._id });
+      if (!empRecord) return res.json([]);
+      employeeId = empRecord._id;
+      const assignedPhases = await Phase.find({ assignees: empRecord._id }, "project");
+      const projectIds = [...new Set(assignedPhases.map((p) => p.project.toString()))];
+      filter._id = { $in: projectIds };
     }
 
     if (req.query.status) filter.status = req.query.status;
     if (req.query.priority) filter.priority = req.query.priority;
-    if (req.query.client && req.user.role !== "client") filter.client = req.query.client;
+    if (req.query.client && req.user.role !== "client" && req.user.role !== "employee") {
+      filter.client = req.query.client;
+    }
 
     const projects = await populateProject(
       Project.find(filter).sort({ createdAt: -1 })
     );
 
-    // Attach phases to each project
-    const result = await Promise.all(projects.map(getProjectWithPhases));
+    const result = await Promise.all(projects.map((p) => getProjectWithPhases(p, employeeId)));
     res.json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -176,7 +184,8 @@ exports.getProjectById = async (req, res) => {
       return res.status(404).json({ message: "Project not found" });
     }
 
-    // Client can only view their own project
+    let employeeId = null;
+
     if (req.user.role === "client") {
       const clientRecord = await Client.findOne({ user: req.user._id });
       if (!clientRecord || project.client._id.toString() !== clientRecord._id.toString()) {
@@ -184,8 +193,15 @@ exports.getProjectById = async (req, res) => {
       }
     }
 
-    // Attach phases with assignees
-    const result = await getProjectWithPhases(project);
+    if (req.user.role === "employee") {
+      const empRecord = await require("../models/Employee").findOne({ user: req.user._id });
+      if (!empRecord) return res.status(403).json({ message: "Access denied" });
+      const assignedPhase = await Phase.findOne({ project: project._id, assignees: empRecord._id });
+      if (!assignedPhase) return res.status(403).json({ message: "Access denied" });
+      employeeId = empRecord._id;
+    }
+
+    const result = await getProjectWithPhases(project, employeeId);
     res.json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -204,6 +220,7 @@ exports.updateProject = async (req, res) => {
       actualEndDate,
       status,
       priority,
+      phases,
     } = req.body;
 
     const project = await Project.findById(req.params.id);
@@ -238,6 +255,49 @@ exports.updateProject = async (req, res) => {
     }
 
     await project.save();
+
+
+    let parsedPhases = phases;
+    if (typeof phases === "string") {
+      try { parsedPhases = JSON.parse(phases); } catch {
+        return res.status(400).json({ message: "Invalid phases format" });
+      }
+    }
+
+    if (parsedPhases && Array.isArray(parsedPhases) && parsedPhases.length > 0) {
+      await Promise.all(
+        parsedPhases.map(async (p, index) => {
+          if (p._id) {
+            const updateFields = {};
+            if (p.name !== undefined)              updateFields.name = p.name;
+            if (p.description !== undefined)       updateFields.description = p.description;
+            if (p.order !== undefined)             updateFields.order = p.order;
+            if (p.estimatedDuration !== undefined) updateFields.estimatedDuration = p.estimatedDuration;
+            if (p.estimatedEndDate !== undefined)  updateFields.estimatedEndDate = p.estimatedEndDate;
+            if (p.actualStart !== undefined)       updateFields.actualStart = p.actualStart;
+            if (p.actualEnd !== undefined)         updateFields.actualEnd = p.actualEnd;
+            if (p.status !== undefined)            updateFields.status = p.status;
+            if (p.assignees !== undefined)         updateFields.assignees = p.assignees;
+
+            await Phase.findByIdAndUpdate(p._id, { $set: updateFields });
+          } else {
+            // New phase — create
+            await Phase.create({
+              project: project._id,
+              name: p.name,
+              description: p.description,
+              order: p.order ?? index + 1,
+              estimatedDuration: p.estimatedDuration ?? 0,
+              estimatedEndDate: p.estimatedEndDate,
+              actualStart: p.actualStart,
+              status: p.status ?? "not_started",
+              assignees: p.assignees ?? [],
+            });
+          }
+        })
+      );
+    }
+
     const populated = await populateProject(Project.findById(project._id));
     const result = await getProjectWithPhases(populated);
     res.json(result);

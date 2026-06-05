@@ -2,6 +2,7 @@ const Project = require("../models/Project");
 const Phase = require("../models/Phase");
 const Task = require("../models/Task");
 const TimeEntry = require("../models/TimeEntry");
+const Client = require("../models/Client");
 
 const getWorkingDays = (startDate, endDate) => {
   let count = 0;
@@ -15,7 +16,6 @@ const getWorkingDays = (startDate, endDate) => {
   return count;
 };
 
-// ─── GET /api/stats/project/:projectId 
 exports.getProjectStats = async (req, res) => {
   try {
     const project = await Project.findById(req.params.projectId)
@@ -25,37 +25,37 @@ exports.getProjectStats = async (req, res) => {
       return res.status(404).json({ message: "Project not found" });
     }
 
+    if (req.user.role === "client") {
+      const clientRecord = await Client.findOne({ user: req.user._id });
+      if (!clientRecord || project.client._id.toString() !== clientRecord._id.toString()) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
     const today = new Date();
 
-    // Get all phases for this project
     const phases = await Phase.find({ project: project._id }).sort({ order: 1 });
 
-    // For each phase — compute stats
     const phaseStats = await Promise.all(
       phases.map(async (phase) => {
-        // Sum all time entries for this phase
         const timeAgg = await TimeEntry.aggregate([
           { $match: { phase: phase._id } },
           { $group: { _id: null, totalHours: { $sum: "$hoursLogged" } } },
         ]);
         const actualHours = timeAgg[0]?.totalHours || 0;
 
-        // Overrun check
         const isDelayed = actualHours > phase.estimatedDuration;
         const hoursOverrun = isDelayed ? actualHours - phase.estimatedDuration : 0;
 
-        // At risk check — today past estimated end date and not completed
         const isAtRisk =
           phase.estimatedEndDate &&
           today > new Date(phase.estimatedEndDate) &&
           phase.status !== "completed";
 
-        // Task summary for this phase
         const tasks = await Task.find({ phase: phase._id });
         const completedCount = tasks.filter((t) => t.status === "completed").length;
         const totalCount = tasks.length;
 
-        // Phase progress — task completion based
         const phaseProgress = totalCount > 0
           ? Math.round((completedCount / totalCount) * 100)
           : 0;
@@ -87,19 +87,16 @@ exports.getProjectStats = async (req, res) => {
       })
     );
 
-    // Project-level flags
     const hasDelayedPhase = phaseStats.some((p) => p.isDelayed);
     const hasAtRiskPhase = phaseStats.some((p) => p.isAtRisk);
     const projectAtRisk = hasDelayedPhase || hasAtRiskPhase;
 
-    // Working days elapsed vs total estimated
     const workingDaysElapsed = getWorkingDays(project.startDate, today);
     const totalEstimatedDays = getWorkingDays(
       project.startDate,
       project.estimatedEndDate
     );
 
-    // Total hours across all phases
     const totalEstimatedHours = phaseStats.reduce(
       (sum, p) => sum + p.estimatedDuration,
       0
@@ -109,7 +106,6 @@ exports.getProjectStats = async (req, res) => {
       0
     );
 
-    // Total tasks across all phases for project progress
     const totalTasksAll = phaseStats.reduce((sum, p) => sum + p.taskSummary.total, 0);
     const completedTasksAll = phaseStats.reduce((sum, p) => sum + p.taskSummary.completed, 0);
     const projectProgress = totalTasksAll > 0
@@ -152,8 +148,6 @@ exports.getProjectStats = async (req, res) => {
   }
 };
 
-// ─── GET /api/stats/employee/:employeeId 
-// How many hours an employee has logged across tasks/projects
 exports.getEmployeeStats = async (req, res) => {
   try {
     const entries = await TimeEntry.aggregate([

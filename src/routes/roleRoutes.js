@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const { protect, authorize } = require("../middleware/authMiddleware");
+const { protect, authorize, blockClient } = require("../middleware/authMiddleware");
 const {
   createRole,
   getRoles,
@@ -9,12 +9,12 @@ const {
   deleteRole,
 } = require("../controllers/roleController");
 
-router.get("/hierarchy", protect, getRoleHierarchy);
-
 router.post("/", protect, authorize("admin"), createRole);
-router.get("/", protect, getRoles);
-router.get("/:id", protect, getRoleById);
 router.put("/:id", protect, authorize("admin"), updateRole);
 router.delete("/:id", protect, authorize("admin"), deleteRole);
+router.get("/hierarchy", protect, authorize("admin"), getRoleHierarchy);
+
+router.get("/", protect, blockClient, getRoles);
+router.get("/:id", protect, blockClient, getRoleById);
 
 module.exports = router;

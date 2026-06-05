@@ -55,7 +55,7 @@ exports.getPermissionsGrouped = async (_req, res) => {
   }
 };
 
-// POST /api/permissions — admin creates a permission
+// POST /api/permissions 
 exports.createPermission = async (req, res) => {
   try {
     const { name, module, actions } = req.body;
@@ -86,7 +86,7 @@ exports.createPermission = async (req, res) => {
   }
 };
 
-// PUT /api/permissions/:id — update name, module, and/or actions
+// PUT /api/permissions/:id 
 exports.updatePermission = async (req, res) => {
   try {
     const { name, module, actions } = req.body;
@@ -110,7 +110,6 @@ exports.updatePermission = async (req, res) => {
       newActions = parsedActions;
     }
 
-    // Name uniqueness
     if (name) {
       const nameTaken = await Permission.findOne({ name: newName, _id: { $ne: req.params.id } });
       if (nameTaken) {
@@ -137,7 +136,6 @@ exports.deletePermission = async (req, res) => {
       return res.status(404).json({ message: "Permission not found" });
     }
 
-    // Block deletion if any role is using this permission
     const rolesUsingPermission = await Role.find({
       permissions: req.params.id,
     }).select("name");

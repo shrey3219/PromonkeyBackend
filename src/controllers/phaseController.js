@@ -2,7 +2,6 @@ const Phase = require("../models/Phase");
 const Project = require("../models/Project");
 const Employee = require("../models/Employee");
 
-// Helper — populate assignees with user info + role
 const populatePhase = (query) =>
   query.populate({
     path: "assignees",
@@ -31,13 +30,11 @@ exports.createPhase = async (req, res) => {
       return res.status(400).json({ message: "project and name are required" });
     }
 
-    // Validate project exists
     const projectExists = await Project.findById(project);
     if (!projectExists) {
       return res.status(404).json({ message: "Project not found" });
     }
 
-    // Validate all assignee employee IDs exist
     if (assignees && assignees.length > 0) {
       const count = await Employee.countDocuments({ _id: { $in: assignees } });
       if (count !== assignees.length) {
@@ -70,6 +67,12 @@ exports.getPhases = async (req, res) => {
     const filter = {};
     if (req.query.project) filter.project = req.query.project;
 
+    if (req.user.role === "employee") {
+      const empRecord = await Employee.findOne({ user: req.user._id });
+      if (!empRecord) return res.json([]);
+      filter.assignees = empRecord._id;
+    }
+
     const phases = await populatePhase(
       Phase.find(filter).sort({ order: 1, createdAt: 1 })
     );
@@ -87,6 +90,16 @@ exports.getPhaseById = async (req, res) => {
     if (!phase) {
       return res.status(404).json({ message: "Phase not found" });
     }
+
+    if (req.user.role === "employee") {
+      const empRecord = await Employee.findOne({ user: req.user._id });
+      if (!empRecord) return res.status(403).json({ message: "Access denied" });
+      const isAssigned = phase.assignees.some(
+        (a) => a._id.toString() === empRecord._id.toString()
+      );
+      if (!isAssigned) return res.status(403).json({ message: "Access denied" });
+    }
+
     res.json(phase);
   } catch (error) {
     res.status(500).json({ message: error.message });

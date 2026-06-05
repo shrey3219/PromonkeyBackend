@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const { protect, authorize, checkPermission } = require("../middleware/authMiddleware");
+const { protect, authorize, checkPermission, blockClient } = require("../middleware/authMiddleware");
 const { uploadClient } = require("../config/cloudinary");
 const {
   createClient,
@@ -10,8 +10,8 @@ const {
 } = require("../controllers/clientController");
 
 router.post("/", protect, authorize("admin"), uploadClient.single("profileImage"), createClient);
-router.get("/", protect, checkPermission("Clients", "read"), getClients);
-router.get("/:id", protect, checkPermission("Clients", "read"), getClientById);
+router.get("/", protect, blockClient, checkPermission("Clients", "read"), getClients);
+router.get("/:id", protect, blockClient, checkPermission("Clients", "read"), getClientById);
 router.put("/:id", protect, authorize("admin"), uploadClient.single("profileImage"), updateClient);
 router.delete("/:id", protect, authorize("admin"), deleteClient);
 

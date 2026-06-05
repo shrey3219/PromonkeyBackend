@@ -49,6 +49,7 @@ const checkPermission = (module, action) => {
       }
 
       if (req.user.role === "admin") return next();
+      if (req.user.role === "client") return next();
 
       const employee = await Employee.findOne({ user: req.user._id }).populate({
         path: "role",
@@ -63,7 +64,6 @@ const checkPermission = (module, action) => {
         return res.status(403).json({ success: false, message: "Your role has been deactivated" });
       }
 
-      // Check if any of the role's permissions match module + action
       const hasPermission = employee.role.permissions.some(
         (p) => p.isActive && p.module === module && Array.isArray(p.actions) && p.actions.includes(action.toLowerCase())
       );
@@ -83,4 +83,11 @@ const checkPermission = (module, action) => {
   };
 };
 
-module.exports = { protect, authorize, checkPermission };
+const blockClient = (req, res, next) => {
+  if (req.user && req.user.role === "client") {
+    return res.status(403).json({ success: false, message: "Access denied for client role" });
+  }
+  next();
+};
+
+module.exports = { protect, authorize, checkPermission, blockClient };

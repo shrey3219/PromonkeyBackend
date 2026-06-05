@@ -19,7 +19,6 @@ router.post(
 );
 router.get("/", protect, checkPermission("Projects", "read"), getProjects);
 router.get("/:id", protect, checkPermission("Projects", "read"), getProjectById);
-// Update project — admin only, can also upload more docs
 router.put(
   "/:id",
   protect,

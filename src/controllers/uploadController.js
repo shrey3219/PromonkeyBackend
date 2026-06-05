@@ -26,9 +26,10 @@ exports.deleteEditorFile = async (req, res) => {
     }
 
     const isImage = fileType && fileType.startsWith("image/");
-    await cloudinary.uploader.destroy(publicId, {
-      resource_type: isImage ? "image" : "raw",
-    });
+    const isVideo = fileType && fileType.startsWith("video/");
+    const resourceType = isImage ? "image" : isVideo ? "video" : "raw";
+
+    await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
 
     res.json({ message: "File deleted successfully" });
   } catch (error) {

@@ -3,7 +3,6 @@ const Task = require("../models/Task");
 const Phase = require("../models/Phase");
 const Employee = require("../models/Employee");
 
-// Helper 
 const populateEntry = (query) =>
   query
     .populate("task", "name status")
@@ -18,7 +17,6 @@ const populateEntry = (query) =>
     });
 
 // ─── POST /api/time-entries 
-// Employee logs time on a task
 exports.logTime = async (req, res) => {
   try {
     const { taskId, hoursLogged, date, note } = req.body;
@@ -27,13 +25,11 @@ exports.logTime = async (req, res) => {
       return res.status(400).json({ message: "taskId and hoursLogged are required" });
     }
 
-    // Get task to pull phase + project refs
     const task = await Task.findById(taskId);
     if (!task) {
       return res.status(404).json({ message: "Task not found" });
     }
 
-    // Get employee record from logged-in user
     const employee = await Employee.findOne({ user: req.user._id });
     if (!employee) {
       return res.status(404).json({ message: "Employee record not found for this user" });
@@ -49,7 +45,6 @@ exports.logTime = async (req, res) => {
       note,
     });
 
-    // Update actualHoursLogged on the task
     const totalHours = await TimeEntry.aggregate([
       { $match: { task: task._id } },
       { $group: { _id: null, total: { $sum: "$hoursLogged" } } },
@@ -90,7 +85,6 @@ exports.deleteTimeEntry = async (req, res) => {
       return res.status(404).json({ message: "Time entry not found" });
     }
 
-    // Recalculate actualHoursLogged on the task
     const task = await Task.findById(entry.task);
     if (task) {
       const totalHours = await TimeEntry.aggregate([

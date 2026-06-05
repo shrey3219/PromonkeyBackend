@@ -24,8 +24,7 @@ exports.createRole = async (req, res) => {
       const parent = await Role.findById(parentRole);
       if (!parent) return res.status(400).json({ message: "Parent role not found" });
     }
-
-    // Validate all permission ids exist (only if permissions array provided)
+    
     if (permissions !== undefined && permissions.length > 0) {
       const found = await Permission.find({ _id: { $in: permissions } });
       if (found.length !== permissions.length) {
