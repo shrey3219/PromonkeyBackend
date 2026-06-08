@@ -41,8 +41,9 @@ const createDocUpload = (folder) => {
       return {
         folder,
         resource_type: isImage ? "image" : "raw",
-        allowed_formats: ["jpg", "jpeg", "png", "webp", "pdf", "doc", "docx", "xls", "xlsx", "txt"],
-        public_id: `${Date.now()}-${file.originalname.replace(/\s+/g, "_")}`,
+        format: "",
+        access_mode: "public",
+        public_id: `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
       };
     },
   });
@@ -59,11 +60,15 @@ const createDocUpload = (folder) => {
         "application/vnd.ms-excel",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "text/plain",
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/x-rar-compressed",
+        "application/octet-stream",
       ];
       if (allowed.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        cb(new Error("File type not allowed. Supported: images, PDF, DOC, DOCX, XLS, XLSX, TXT"), false);
+        cb(new Error("File type not allowed. Supported: images, PDF, DOC, DOCX, XLS, XLSX, TXT, ZIP, RAR"), false);
       }
     },
   });
@@ -79,7 +84,9 @@ const createEditorUpload = (folder) => {
       return {
         folder,
         resource_type: isImage ? "image" : isVideo ? "video" : "raw",
-        public_id: `${Date.now()}-${file.originalname.replace(/\s+/g, "_")}`,
+        format: "",
+        access_mode: "public",
+        public_id: `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
       };
     },
   });
@@ -96,12 +103,16 @@ const createEditorUpload = (folder) => {
         "application/vnd.ms-excel",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "text/plain",
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/x-rar-compressed",
+        "application/octet-stream",
         "video/mp4", "video/webm", "video/quicktime", "video/x-msvideo",
       ];
       if (allowed.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        cb(new Error("File type not allowed. Supported: images, PDF, DOC, DOCX, XLS, XLSX, TXT, MP4, WEBM, MOV, AVI"), false);
+        cb(new Error("File type not allowed. Supported: images, PDF, DOC, DOCX, XLS, XLSX, TXT, ZIP, RAR, MP4, WEBM, MOV, AVI"), false);
       }
     },
   });
