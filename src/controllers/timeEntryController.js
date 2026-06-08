@@ -35,6 +35,29 @@ exports.logTime = async (req, res) => {
       return res.status(404).json({ message: "Employee record not found for this user" });
     }
 
+    if (req.user.role === "employee") {
+      const isTaskAssigned = task.assignedTo?.toString() === employee._id.toString();
+      const isPhaseAssigned = await Phase.findOne({ _id: task.phase, assignees: employee._id });
+      if (!isTaskAssigned && !isPhaseAssigned) {
+        return res.status(403).json({ message: "You can only log time on your assigned tasks." });
+      }
+    }
+
+    const entryDate = date ? new Date(date) : new Date();
+    const dayStart = new Date(entryDate.getFullYear(), entryDate.getMonth(), entryDate.getDate());
+    const dayEnd   = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+    const existing = await TimeEntry.findOne({
+      employee: employee._id,
+      task: taskId,
+      date: { $gte: dayStart, $lt: dayEnd },
+    });
+    if (existing) {
+      return res.status(400).json({
+        message: "You have already logged time for this task today",
+      });
+    }
+
     const entry = await TimeEntry.create({
       task: taskId,
       phase: task.phase,
@@ -63,10 +86,16 @@ exports.logTime = async (req, res) => {
 exports.getTimeEntries = async (req, res) => {
   try {
     const filter = {};
-    if (req.query.task) filter.task = req.query.task;
-    if (req.query.phase) filter.phase = req.query.phase;
+    if (req.query.task)    filter.task = req.query.task;
+    if (req.query.phase)   filter.phase = req.query.phase;
     if (req.query.project) filter.project = req.query.project;
     if (req.query.employee) filter.employee = req.query.employee;
+
+    if (req.user.role === "employee") {
+      const employee = await Employee.findOne({ user: req.user._id });
+      if (!employee) return res.json([]);
+      filter.employee = employee._id;
+    }
 
     const entries = await populateEntry(
       TimeEntry.find(filter).sort({ date: -1 })

@@ -144,11 +144,18 @@ exports.deleteComment = async (req, res) => {
       return res.status(404).json({ message: "Comment not found" });
     }
 
-    if (
-      comment.author.toString() !== req.user._id.toString() &&
-      req.user.role !== "admin"
-    ) {
+    const isAuthor = comment.author.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === "admin";
+
+    if (!isAuthor && !isAdmin) {
       return res.status(403).json({ message: "Not authorized to delete this comment" });
+    }
+
+    if (isAuthor && req.user.role === "employee") {
+      const ageMs = Date.now() - new Date(comment.createdAt).getTime();
+      if (ageMs > 5 * 60 * 1000) {
+        return res.status(403).json({ message: "You can only delete your comment within 5 minutes" });
+      }
     }
 
     await comment.deleteOne();

@@ -37,11 +37,4 @@ const commentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-commentSchema.pre("save", function (next) {
-  if (!this.task && !this.phase && !this.project) {
-    return next(new Error("Either task, phase, or project is required"));
-  }
-  next();
-});
-
 module.exports = mongoose.model("Comment", commentSchema);
