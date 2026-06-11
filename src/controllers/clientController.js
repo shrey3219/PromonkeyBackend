@@ -106,22 +106,25 @@ exports.getClientById = async (req, res) => {
 // PUT /api/clients/:id
 exports.updateClient = async (req, res) => {
   try {
+    const body = req.body || {};
 
+    const clientName  = body.clientName  !== undefined ? String(body.clientName).trim()  : undefined;
+    const companyName = body.companyName !== undefined ? String(body.companyName).trim()  : undefined;
+    const email       = body.email       !== undefined ? String(body.email).trim()        : undefined;
+    const phone       = body.phone       !== undefined ? String(body.phone).trim()        : undefined;
+    const address     = body.address     !== undefined ? String(body.address).trim()      : undefined;
+    const notes       = body.notes       !== undefined ? String(body.notes).trim()        : undefined;
+    const password    = body.password    !== undefined ? String(body.password).trim()     : undefined;
 
-    const clientName  = req.body.clientName  !== undefined ? String(req.body.clientName).trim()  : undefined;
-    const companyName = req.body.companyName !== undefined ? String(req.body.companyName).trim()  : undefined;
-    const email       = req.body.email       !== undefined ? String(req.body.email).trim()        : undefined;
-    const phone       = req.body.phone       !== undefined ? String(req.body.phone).trim()        : undefined;
-    const address     = req.body.address     !== undefined ? String(req.body.address).trim()      : undefined;
-    const notes       = req.body.notes       !== undefined ? String(req.body.notes).trim()        : undefined;
-    const password    = req.body.password    !== undefined ? String(req.body.password).trim()     : undefined;
+    if (!req.file && Object.values({ clientName, companyName, email, phone, address, notes, password }).every(v => v === undefined)) {
+      return res.status(400).json({ message: "No fields provided to update" });
+    }
 
     const client = await Client.findById(req.params.id);
     if (!client) {
       return res.status(404).json({ message: "Client not found" });
     }
 
-    // ── Validate: required fields cannot be empty if provided ──
     if (clientName  !== undefined && clientName  === "") return res.status(400).json({ message: "Client name cannot be empty" });
     if (email       !== undefined && email       === "") return res.status(400).json({ message: "Email cannot be empty" });
     if (phone       !== undefined && phone       === "") return res.status(400).json({ message: "Phone number cannot be empty" });
@@ -129,12 +132,11 @@ exports.updateClient = async (req, res) => {
     if (password    !== undefined && password    === "") return res.status(400).json({ message: "Password cannot be empty" });
     if (password    !== undefined && password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
 
-    // ── Normalize email and detect change ──
-    // At this point email is either undefined or a non-empty trimmed string (empty string caught above)
+  
     const normalizedEmail = (email !== undefined && email !== "") ? email.toLowerCase() : undefined;
     const emailChanged = normalizedEmail !== undefined && normalizedEmail !== client.email;
 
-    // ── Uniqueness checks only when actually changing ──
+
     if (emailChanged) {
       const emailInClient = await Client.findOne({ email: normalizedEmail, _id: { $ne: client._id } });
       if (emailInClient) {
@@ -154,7 +156,6 @@ exports.updateClient = async (req, res) => {
       }
     }
 
-    // ── Handle profile image upload ──
     if (req.file) {
       if (client.profileImage && client.profileImage.publicId) {
         await cloudinary.uploader.destroy(client.profileImage.publicId).catch(() => {});
@@ -162,7 +163,6 @@ exports.updateClient = async (req, res) => {
       client.profileImage = { url: req.file.path, publicId: req.file.filename };
     }
 
-    // ── Build $set for Client — only include fields that were provided ──
     const clientSet = {};
     if (clientName    !== undefined) clientSet.clientName  = clientName;
     if (companyName   !== undefined) clientSet.companyName = companyName;
@@ -172,12 +172,11 @@ exports.updateClient = async (req, res) => {
     if (notes         !== undefined) clientSet.notes       = notes;
     if (req.file)                    clientSet.profileImage = client.profileImage;
 
-    // Use native driver to skip Mongoose's unique-index validator (we already checked manually above)
+  
     if (Object.keys(clientSet).length > 0) {
       await Client.collection.updateOne({ _id: client._id }, { $set: clientSet });
     }
 
-    // ── Build $set for linked User ──
     const userSet = {};
     if (clientName      !== undefined) userSet.name  = clientName;
     if (normalizedEmail !== undefined) userSet.email = normalizedEmail;
@@ -194,12 +193,10 @@ exports.updateClient = async (req, res) => {
       await User.collection.updateOne({ _id: client.user }, { $set: userSet });
     }
 
-    // ── Return fresh populated document ──
     const updatedClient = await Client.findById(client._id)
       .populate("createdBy", "name email")
       .populate("user", "name email profileImage");
 
-    // ── Send notifications ──
     if (emailChanged) {
       sendClientEmailUpdateEmail(normalizedEmail, updatedClient.clientName).catch((err) => {
         console.error("Email update notification failed:", err.message);
