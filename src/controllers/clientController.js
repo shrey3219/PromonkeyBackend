@@ -2,7 +2,7 @@ const Client = require("../models/Client");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const { cloudinary } = require("../config/cloudinary");
-const { sendClientWelcomeEmail } = require("../utils/sendEmail");
+const { sendClientWelcomeEmail, sendClientEmailUpdateEmail, sendClientPasswordUpdateEmail } = require("../utils/sendEmail");
 
 // POST /api/clients
 exports.createClient = async (req, res) => {
@@ -109,16 +109,40 @@ exports.getClientById = async (req, res) => {
 // PUT /api/clients/:id
 exports.updateClient = async (req, res) => {
   try {
-    const { clientName, companyName, email, phone, address, notes } = req.body;
+    const { clientName, companyName, email, phone, address, notes, password } = req.body;
 
     const client = await Client.findById(req.params.id);
     if (!client) {
       return res.status(404).json({ message: "Client not found" });
     }
 
-    if (email && email.toLowerCase().trim() !== client.email) {
+    // Validate required fields — empty strings are not allowed
+    if (clientName !== undefined && clientName.trim() === "") {
+      return res.status(400).json({ message: "Client name cannot be empty" });
+    }
+    if (email !== undefined && email.trim() === "") {
+      return res.status(400).json({ message: "Email cannot be empty" });
+    }
+    if (phone !== undefined && phone.trim() === "") {
+      return res.status(400).json({ message: "Phone number cannot be empty" });
+    }
+    if (address !== undefined && address.trim() === "") {
+      return res.status(400).json({ message: "Address cannot be empty" });
+    }
+    if (password !== undefined && password.trim() === "") {
+      return res.status(400).json({ message: "Password cannot be empty" });
+    }
+    if (password !== undefined && password.trim().length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    }
+
+    const normalizedEmail = email ? email.toLowerCase().trim() : undefined;
+    const emailChanged = normalizedEmail && normalizedEmail !== client.email;
+
+    // Check email uniqueness only if it actually changed
+    if (emailChanged) {
       const existing = await User.findOne({
-        email: email.toLowerCase().trim(),
+        email: normalizedEmail,
         _id: { $ne: client.user },
       });
       if (existing) {
@@ -126,9 +150,9 @@ exports.updateClient = async (req, res) => {
       }
     }
 
-
-    if (phone !== undefined && phone !== client.phone) {
-      const phoneTaken = await User.findOne({ phone, _id: { $ne: client.user } });
+    // Check phone uniqueness only if it actually changed
+    if (phone !== undefined && phone.trim() !== client.phone) {
+      const phoneTaken = await User.findOne({ phone: phone.trim(), _id: { $ne: client.user } });
       if (phoneTaken) {
         return res.status(400).json({ message: "A user with this phone number already exists" });
       }
@@ -149,26 +173,49 @@ exports.updateClient = async (req, res) => {
     }
 
     if (clientName !== undefined) {
-      client.clientName = clientName;
-      if (client.user) await User.findByIdAndUpdate(client.user, { $set: { name: clientName } });
+      client.clientName = clientName.trim();
+      if (client.user) await User.findByIdAndUpdate(client.user, { $set: { name: clientName.trim() } });
     }
-    if (companyName !== undefined) client.companyName = companyName;
-    if (email !== undefined) {
-      client.email = email;
-      if (client.user) await User.findByIdAndUpdate(client.user, { $set: { email: email.toLowerCase().trim() } });
+    if (companyName !== undefined) client.companyName = companyName.trim();
+    if (normalizedEmail !== undefined) {
+      client.email = normalizedEmail;
+      if (client.user) await User.findByIdAndUpdate(client.user, { $set: { email: normalizedEmail } });
     }
     if (phone !== undefined) {
-      client.phone = phone;
-      if (client.user) await User.findByIdAndUpdate(client.user, { $set: { phone } });
+      client.phone = phone.trim();
+      if (client.user) await User.findByIdAndUpdate(client.user, { $set: { phone: phone.trim() } });
     }
-    if (address !== undefined) client.address = address;
-    if (notes !== undefined) client.notes = notes;
+    if (address !== undefined) client.address = address.trim();
+    if (notes !== undefined) client.notes = notes.trim();
+
+    // Update password if provided
+    if (password !== undefined) {
+      const hashedPassword = await bcrypt.hash(password.trim(), 10);
+      if (client.user) {
+        await User.findByIdAndUpdate(client.user, { $set: { password: hashedPassword } });
+      }
+    }
 
     await client.save();
     await client.populate([
       { path: "createdBy", select: "name email" },
       { path: "user", select: "name email profileImage" },
     ]);
+
+    // Send email notification if email was changed
+    if (emailChanged) {
+      sendClientEmailUpdateEmail(normalizedEmail, client.clientName).catch((err) => {
+        console.error("Failed to send email update notification:", err.message);
+      });
+    }
+
+    // Send email notification if password was changed
+    if (password !== undefined) {
+      const emailToNotify = normalizedEmail || client.email;
+      sendClientPasswordUpdateEmail(emailToNotify, client.clientName, password.trim()).catch((err) => {
+        console.error("Failed to send password update notification:", err.message);
+      });
+    }
 
     res.json(client);
   } catch (error) {
