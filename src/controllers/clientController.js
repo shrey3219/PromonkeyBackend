@@ -158,53 +158,56 @@ exports.updateClient = async (req, res) => {
       }
     }
 
+    // Build update objects
+    const clientUpdate = {};
+    const userUpdate = {};
+
     if (req.file) {
       if (client.profileImage && client.profileImage.publicId) {
         await cloudinary.uploader.destroy(client.profileImage.publicId).catch(() => {});
       }
-      const newImage = { url: req.file.path, publicId: req.file.filename };
-      client.profileImage = newImage;
-
-      if (client.user) {
-        await User.findByIdAndUpdate(client.user, {
-          $set: { "profileImage.url": req.file.path, "profileImage.publicId": req.file.filename },
-        });
-      }
+      clientUpdate.profileImage = { url: req.file.path, publicId: req.file.filename };
+      userUpdate["profileImage.url"] = req.file.path;
+      userUpdate["profileImage.publicId"] = req.file.filename;
     }
 
     if (clientName !== undefined) {
-      client.clientName = clientName.trim();
-      if (client.user) await User.findByIdAndUpdate(client.user, { $set: { name: clientName.trim() } });
+      clientUpdate.clientName = clientName.trim();
+      userUpdate.name = clientName.trim();
     }
-    if (companyName !== undefined) client.companyName = companyName.trim();
+    if (companyName !== undefined) clientUpdate.companyName = companyName.trim();
     if (normalizedEmail !== undefined) {
-      client.email = normalizedEmail;
-      if (client.user) await User.findByIdAndUpdate(client.user, { $set: { email: normalizedEmail } });
+      clientUpdate.email = normalizedEmail;
+      userUpdate.email = normalizedEmail;
     }
     if (phone !== undefined) {
-      client.phone = phone.trim();
-      if (client.user) await User.findByIdAndUpdate(client.user, { $set: { phone: phone.trim() } });
+      clientUpdate.phone = phone.trim();
+      userUpdate.phone = phone.trim();
     }
-    if (address !== undefined) client.address = address.trim();
-    if (notes !== undefined) client.notes = notes.trim();
+    if (address !== undefined) clientUpdate.address = address.trim();
+    if (notes !== undefined) clientUpdate.notes = notes.trim();
 
-    // Update password if provided
     if (password !== undefined) {
       const hashedPassword = await bcrypt.hash(password.trim(), 10);
-      if (client.user) {
-        await User.findByIdAndUpdate(client.user, { $set: { password: hashedPassword } });
-      }
+      userUpdate.password = hashedPassword;
     }
 
-    await client.save();
-    await client.populate([
-      { path: "createdBy", select: "name email" },
-      { path: "user", select: "name email profileImage" },
-    ]);
+    // Use findByIdAndUpdate to avoid Mongoose unique-index self-conflict on save()
+    const updatedClient = await Client.findByIdAndUpdate(
+      req.params.id,
+      { $set: clientUpdate },
+      { new: true, runValidators: true }
+    )
+      .populate("createdBy", "name email")
+      .populate("user", "name email profileImage");
+
+    if (client.user && Object.keys(userUpdate).length > 0) {
+      await User.findByIdAndUpdate(client.user, { $set: userUpdate });
+    }
 
     // Send email notification if email was changed
     if (emailChanged) {
-      sendClientEmailUpdateEmail(normalizedEmail, client.clientName).catch((err) => {
+      sendClientEmailUpdateEmail(normalizedEmail, updatedClient.clientName).catch((err) => {
         console.error("Failed to send email update notification:", err.message);
       });
     }
@@ -212,12 +215,12 @@ exports.updateClient = async (req, res) => {
     // Send email notification if password was changed
     if (password !== undefined) {
       const emailToNotify = normalizedEmail || client.email;
-      sendClientPasswordUpdateEmail(emailToNotify, client.clientName, password.trim()).catch((err) => {
+      sendClientPasswordUpdateEmail(emailToNotify, updatedClient.clientName, password.trim()).catch((err) => {
         console.error("Failed to send password update notification:", err.message);
       });
     }
 
-    res.json(client);
+    res.json(updatedClient);
   } catch (error) {
     if (error.code === 11000) {
       return res.status(400).json({ message: "A client with this email already exists" });
