@@ -338,11 +338,16 @@ exports.changePassword = async (req, res) => {
       return res.status(400).json({ message: "New password must be different from the current password" });
     }
  
-    const user = await User.findById(userId).select("+password");
+    // findOne use karo taaki password field zaroor aaye (model mein select:false nahi hai)
+    const user = await User.findOne({ _id: userId });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
- 
+
+    if (!user.password) {
+      return res.status(500).json({ message: "Password data unavailable. Contact support." });
+    }
+
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: "Current password is incorrect" });

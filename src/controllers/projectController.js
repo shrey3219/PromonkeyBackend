@@ -9,15 +9,15 @@ const populateProject = (query) =>
     .populate("client", "clientName companyName email phone profileImage")
     .populate("createdBy", "name email");
 
-// Calculate progress from tasks
+// Calculate progress from phases
 const calcProgress = async (projectId) => {
-  const tasks = await Task.find({ project: projectId }, "status");
-  const total = tasks.length;
-  const completed = tasks.filter((t) => t.status === "completed").length;
+  const phases = await Phase.find({ project: projectId }, "status");
+  const total = phases.length;
+  const completed = phases.filter((p) => p.status === "completed").length;
   return {
     progressPercent: total > 0 ? Math.round((completed / total) * 100) : 0,
-    totalTasks: total,
-    completedTasks: completed,
+    totalPhases: total,
+    completedPhases: completed,
   };
 };
 
