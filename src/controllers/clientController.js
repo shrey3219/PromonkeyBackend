@@ -116,7 +116,7 @@ exports.updateClient = async (req, res) => {
       return res.status(404).json({ message: "Client not found" });
     }
 
-    // Validate required fields — empty strings are not allowed
+    // ── Validation: reject empty strings for required fields ──
     if (clientName !== undefined && clientName.trim() === "") {
       return res.status(400).json({ message: "Client name cannot be empty" });
     }
@@ -136,92 +136,114 @@ exports.updateClient = async (req, res) => {
       return res.status(400).json({ message: "Password must be at least 6 characters" });
     }
 
-    const normalizedEmail = email ? email.toLowerCase().trim() : undefined;
-    const emailChanged = normalizedEmail && normalizedEmail !== client.email;
+    const normalizedEmail = email !== undefined ? email.toLowerCase().trim() : undefined;
+    // Only treat as changed if it's actually different from what's stored
+    const emailChanged = normalizedEmail !== undefined && normalizedEmail !== client.email;
 
-    // Check email uniqueness only if it actually changed
+    // ── Uniqueness checks — only when the value actually changed ──
     if (emailChanged) {
-      const existing = await User.findOne({
+      // Check Client collection (exclude current client)
+      const emailInClient = await Client.findOne({
+        email: normalizedEmail,
+        _id: { $ne: client._id },
+      });
+      if (emailInClient) {
+        return res.status(400).json({ message: "A client with this email already exists" });
+      }
+      // Check User collection (exclude linked user)
+      const emailInUser = await User.findOne({
         email: normalizedEmail,
         _id: { $ne: client.user },
       });
-      if (existing) {
+      if (emailInUser) {
         return res.status(400).json({ message: "A user with this email already exists" });
       }
     }
 
-    // Check phone uniqueness only if it actually changed
-    if (phone !== undefined && phone.trim() !== client.phone) {
-      const phoneTaken = await User.findOne({ phone: phone.trim(), _id: { $ne: client.user } });
+    const normalizedPhone = phone !== undefined ? phone.trim() : undefined;
+    const phoneChanged = normalizedPhone !== undefined && normalizedPhone !== client.phone;
+
+    if (phoneChanged) {
+      const phoneTaken = await User.findOne({
+        phone: normalizedPhone,
+        _id: { $ne: client.user },
+      });
       if (phoneTaken) {
         return res.status(400).json({ message: "A user with this phone number already exists" });
       }
     }
 
-    // Build update objects
-    const clientUpdate = {};
-    const userUpdate = {};
-
+    // ── Handle profile image upload ──
     if (req.file) {
       if (client.profileImage && client.profileImage.publicId) {
         await cloudinary.uploader.destroy(client.profileImage.publicId).catch(() => {});
       }
-      clientUpdate.profileImage = { url: req.file.path, publicId: req.file.filename };
+      client.profileImage = { url: req.file.path, publicId: req.file.filename };
+    }
+
+    // ── Apply changes directly to the document ──
+    if (clientName !== undefined) client.clientName = clientName.trim();
+    if (companyName !== undefined) client.companyName = companyName.trim();
+    if (normalizedEmail !== undefined) client.email = normalizedEmail;
+    if (normalizedPhone !== undefined) client.phone = normalizedPhone;
+    if (address !== undefined) client.address = address.trim();
+    if (notes !== undefined) client.notes = notes.trim();
+
+    // Bypass unique-index self-conflict: tell Mongoose not to re-validate unique fields
+    await Client.collection.updateOne(
+      { _id: client._id },
+      {
+        $set: {
+          clientName: client.clientName,
+          companyName: client.companyName,
+          email: client.email,
+          phone: client.phone,
+          address: client.address,
+          notes: client.notes,
+          profileImage: client.profileImage,
+        },
+      }
+    );
+
+    // ── Sync User document ──
+    const userUpdate = {};
+    if (clientName !== undefined) userUpdate.name = clientName.trim();
+    if (normalizedEmail !== undefined) userUpdate.email = normalizedEmail;
+    if (normalizedPhone !== undefined) userUpdate.phone = normalizedPhone;
+    if (req.file) {
       userUpdate["profileImage.url"] = req.file.path;
       userUpdate["profileImage.publicId"] = req.file.filename;
     }
-
-    if (clientName !== undefined) {
-      clientUpdate.clientName = clientName.trim();
-      userUpdate.name = clientName.trim();
-    }
-    if (companyName !== undefined) clientUpdate.companyName = companyName.trim();
-    if (normalizedEmail !== undefined) {
-      clientUpdate.email = normalizedEmail;
-      userUpdate.email = normalizedEmail;
-    }
-    if (phone !== undefined) {
-      clientUpdate.phone = phone.trim();
-      userUpdate.phone = phone.trim();
-    }
-    if (address !== undefined) clientUpdate.address = address.trim();
-    if (notes !== undefined) clientUpdate.notes = notes.trim();
-
     if (password !== undefined) {
-      const hashedPassword = await bcrypt.hash(password.trim(), 10);
-      userUpdate.password = hashedPassword;
+      userUpdate.password = await bcrypt.hash(password.trim(), 10);
     }
 
-    // Use findByIdAndUpdate to avoid Mongoose unique-index self-conflict on save()
-    const updatedClient = await Client.findByIdAndUpdate(
-      req.params.id,
-      { $set: clientUpdate },
-      { new: true, runValidators: true }
-    )
+    if (client.user && Object.keys(userUpdate).length > 0) {
+      await User.collection.updateOne({ _id: client.user }, { $set: userUpdate });
+    }
+
+    // ── Fetch fresh populated response ──
+    const updatedClient = await Client.findById(client._id)
       .populate("createdBy", "name email")
       .populate("user", "name email profileImage");
 
-    if (client.user && Object.keys(userUpdate).length > 0) {
-      await User.findByIdAndUpdate(client.user, { $set: userUpdate });
-    }
-
-    // Send email notification if email was changed
+    // ── Send notifications ──
     if (emailChanged) {
       sendClientEmailUpdateEmail(normalizedEmail, updatedClient.clientName).catch((err) => {
-        console.error("Failed to send email update notification:", err.message);
+        console.error("Email update notification failed:", err.message);
       });
     }
 
-    // Send email notification if password was changed
     if (password !== undefined) {
-      const emailToNotify = normalizedEmail || client.email;
-      sendClientPasswordUpdateEmail(emailToNotify, updatedClient.clientName, password.trim()).catch((err) => {
-        console.error("Failed to send password update notification:", err.message);
+      const notifyEmail = normalizedEmail !== undefined ? normalizedEmail : client.email;
+      sendClientPasswordUpdateEmail(notifyEmail, updatedClient.clientName, password.trim()).catch((err) => {
+        console.error("Password update notification failed:", err.message);
       });
     }
 
     res.json(updatedClient);
   } catch (error) {
+    console.error("updateClient error:", error);
     if (error.code === 11000) {
       return res.status(400).json({ message: "A client with this email already exists" });
     }
