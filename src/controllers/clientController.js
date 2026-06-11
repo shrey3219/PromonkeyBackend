@@ -106,224 +106,123 @@ exports.getClientById = async (req, res) => {
 // PUT /api/clients/:id
 exports.updateClient = async (req, res) => {
   try {
-    const {
-      clientName,
-      companyName,
-      email,
-      phone,
-      address,
-      notes,
-      password,
-    } = req.body;
+
+
+    const clientName  = req.body.clientName  !== undefined ? String(req.body.clientName).trim()  : undefined;
+    const companyName = req.body.companyName !== undefined ? String(req.body.companyName).trim()  : undefined;
+    const email       = req.body.email       !== undefined ? String(req.body.email).trim()        : undefined;
+    const phone       = req.body.phone       !== undefined ? String(req.body.phone).trim()        : undefined;
+    const address     = req.body.address     !== undefined ? String(req.body.address).trim()      : undefined;
+    const notes       = req.body.notes       !== undefined ? String(req.body.notes).trim()        : undefined;
+    const password    = req.body.password    !== undefined ? String(req.body.password).trim()     : undefined;
 
     const client = await Client.findById(req.params.id);
-
     if (!client) {
       return res.status(404).json({ message: "Client not found" });
     }
 
-    // Trim values
-    const trimmedClientName = clientName?.trim();
-    const trimmedCompanyName = companyName?.trim();
-    const trimmedEmail = email?.trim().toLowerCase();
-    const trimmedPhone = phone?.trim();
-    const trimmedAddress = address?.trim();
-    const trimmedNotes = notes?.trim();
-    const trimmedPassword = password?.trim();
+    // ── Validate: required fields cannot be empty if provided ──
+    if (clientName  !== undefined && clientName  === "") return res.status(400).json({ message: "Client name cannot be empty" });
+    if (email       !== undefined && email       === "") return res.status(400).json({ message: "Email cannot be empty" });
+    if (phone       !== undefined && phone       === "") return res.status(400).json({ message: "Phone number cannot be empty" });
+    if (address     !== undefined && address     === "") return res.status(400).json({ message: "Address cannot be empty" });
+    if (password    !== undefined && password    === "") return res.status(400).json({ message: "Password cannot be empty" });
+    if (password    !== undefined && password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
 
-    // Validation
-    if (clientName !== undefined && !trimmedClientName) {
-      return res
-        .status(400)
-        .json({ message: "Client name cannot be empty" });
-    }
+    // ── Normalize email and detect change ──
+    // At this point email is either undefined or a non-empty trimmed string (empty string caught above)
+    const normalizedEmail = (email !== undefined && email !== "") ? email.toLowerCase() : undefined;
+    const emailChanged = normalizedEmail !== undefined && normalizedEmail !== client.email;
 
-    if (email !== undefined && !trimmedEmail) {
-      return res.status(400).json({ message: "Email cannot be empty" });
-    }
-
-    if (phone !== undefined && !trimmedPhone) {
-      return res
-        .status(400)
-        .json({ message: "Phone number cannot be empty" });
-    }
-
-    if (address !== undefined && !trimmedAddress) {
-      return res.status(400).json({ message: "Address cannot be empty" });
-    }
-
-    if (password !== undefined) {
-      if (!trimmedPassword) {
-        return res.status(400).json({
-          message: "Password cannot be empty",
-        });
+    // ── Uniqueness checks only when actually changing ──
+    if (emailChanged) {
+      const emailInClient = await Client.findOne({ email: normalizedEmail, _id: { $ne: client._id } });
+      if (emailInClient) {
+        return res.status(400).json({ message: "A client with this email already exists" });
       }
-
-      if (trimmedPassword.length < 6) {
-        return res.status(400).json({
-          message: "Password must be at least 6 characters",
-        });
+      const emailInUser = await User.findOne({ email: normalizedEmail, _id: { $ne: client.user } });
+      if (emailInUser) {
+        return res.status(400).json({ message: "A user with this email already exists" });
       }
     }
 
-    // Email duplicate check
-    if (
-      trimmedEmail &&
-      trimmedEmail !== client.email?.toLowerCase()
-    ) {
-      const existingClient = await Client.findOne({
-        email: trimmedEmail,
-        _id: { $ne: client._id },
-      });
-
-      if (existingClient) {
-        return res.status(400).json({
-          message: "A client with this email already exists",
-        });
-      }
-
-      const existingUser = await User.findOne({
-        email: trimmedEmail,
-        _id: { $ne: client.user },
-      });
-
-      if (existingUser) {
-        return res.status(400).json({
-          message: "A user with this email already exists",
-        });
+    const phoneChanged = phone !== undefined && phone !== client.phone;
+    if (phoneChanged) {
+      const phoneTaken = await User.findOne({ phone, _id: { $ne: client.user } });
+      if (phoneTaken) {
+        return res.status(400).json({ message: "A user with this phone number already exists" });
       }
     }
 
-    // Phone duplicate check
-    if (
-      trimmedPhone &&
-      trimmedPhone !== client.phone
-    ) {
-      const existingPhone = await User.findOne({
-        phone: trimmedPhone,
-        _id: { $ne: client.user },
-      });
-
-      if (existingPhone) {
-        return res.status(400).json({
-          message: "A user with this phone number already exists",
-        });
-      }
-    }
-
-    // Profile image upload
+    // ── Handle profile image upload ──
     if (req.file) {
-      if (client.profileImage?.publicId) {
-        try {
-          await cloudinary.uploader.destroy(
-            client.profileImage.publicId
-          );
-        } catch (err) {
-          console.log("Cloudinary delete error:", err.message);
-        }
+      if (client.profileImage && client.profileImage.publicId) {
+        await cloudinary.uploader.destroy(client.profileImage.publicId).catch(() => {});
       }
-
-      client.profileImage = {
-        url: req.file.path,
-        publicId: req.file.filename,
-      };
+      client.profileImage = { url: req.file.path, publicId: req.file.filename };
     }
 
-    // Update Client
-    if (trimmedClientName !== undefined)
-      client.clientName = trimmedClientName;
+    // ── Build $set for Client — only include fields that were provided ──
+    const clientSet = {};
+    if (clientName    !== undefined) clientSet.clientName  = clientName;
+    if (companyName   !== undefined) clientSet.companyName = companyName;
+    if (normalizedEmail !== undefined) clientSet.email     = normalizedEmail;
+    if (phone         !== undefined) clientSet.phone       = phone;
+    if (address       !== undefined) clientSet.address     = address;
+    if (notes         !== undefined) clientSet.notes       = notes;
+    if (req.file)                    clientSet.profileImage = client.profileImage;
 
-    if (trimmedCompanyName !== undefined)
-      client.companyName = trimmedCompanyName;
-
-    if (trimmedEmail !== undefined)
-      client.email = trimmedEmail;
-
-    if (trimmedPhone !== undefined)
-      client.phone = trimmedPhone;
-
-    if (trimmedAddress !== undefined)
-      client.address = trimmedAddress;
-
-    if (trimmedNotes !== undefined)
-      client.notes = trimmedNotes;
-
-    await client.save();
-
-    // Update linked user
-    if (client.user) {
-      const user = await User.findById(client.user);
-
-      if (user) {
-        if (trimmedClientName !== undefined)
-          user.name = trimmedClientName;
-
-        if (trimmedEmail !== undefined)
-          user.email = trimmedEmail;
-
-        if (trimmedPhone !== undefined)
-          user.phone = trimmedPhone;
-
-        if (req.file) {
-          user.profileImage = {
-            url: req.file.path,
-            publicId: req.file.filename,
-          };
-        }
-
-        if (trimmedPassword) {
-          user.password = await bcrypt.hash(
-            trimmedPassword,
-            10
-          );
-        }
-
-        await user.save();
-      }
+    // Use native driver to skip Mongoose's unique-index validator (we already checked manually above)
+    if (Object.keys(clientSet).length > 0) {
+      await Client.collection.updateOne({ _id: client._id }, { $set: clientSet });
     }
 
+    // ── Build $set for linked User ──
+    const userSet = {};
+    if (clientName      !== undefined) userSet.name  = clientName;
+    if (normalizedEmail !== undefined) userSet.email = normalizedEmail;
+    if (phone           !== undefined) userSet.phone = phone;
+    if (req.file) {
+      userSet["profileImage.url"]      = req.file.path;
+      userSet["profileImage.publicId"] = req.file.filename;
+    }
+    if (password !== undefined) {
+      userSet.password = await bcrypt.hash(password, 10);
+    }
+
+    if (client.user && Object.keys(userSet).length > 0) {
+      await User.collection.updateOne({ _id: client.user }, { $set: userSet });
+    }
+
+    // ── Return fresh populated document ──
     const updatedClient = await Client.findById(client._id)
       .populate("createdBy", "name email")
       .populate("user", "name email profileImage");
 
-    // Notification email
-    if (
-      trimmedEmail &&
-      trimmedEmail !== client.email?.toLowerCase()
-    ) {
-      sendClientEmailUpdateEmail(
-        trimmedEmail,
-        updatedClient.clientName
-      ).catch((err) =>
-        console.log("Email notification error:", err.message)
-      );
-    }
-
-    if (trimmedPassword) {
-      sendClientPasswordUpdateEmail(
-        updatedClient.email,
-        updatedClient.clientName,
-        trimmedPassword
-      ).catch((err) =>
-        console.log("Password notification error:", err.message)
-      );
-    }
-
-    return res.status(200).json(updatedClient);
-  } catch (error) {
-    console.error("Update Client Error:", error);
-
-    if (error.code === 11000) {
-      return res.status(400).json({
-        message: "Email already exists",
+    // ── Send notifications ──
+    if (emailChanged) {
+      sendClientEmailUpdateEmail(normalizedEmail, updatedClient.clientName).catch((err) => {
+        console.error("Email update notification failed:", err.message);
       });
     }
 
-    return res.status(500).json({
-      message: error.message,
-    });
+    if (password !== undefined) {
+      const notifyEmail = normalizedEmail ?? client.email;
+      sendClientPasswordUpdateEmail(notifyEmail, updatedClient.clientName, password).catch((err) => {
+        console.error("Password update notification failed:", err.message);
+      });
+    }
+
+    res.json(updatedClient);
+  } catch (error) {
+    console.error("updateClient error:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "A client with this email already exists" });
+    }
+    res.status(500).json({ message: error.message });
   }
 };
+
 // DELETE /api/clients/:id
 exports.deleteClient = async (req, res) => {
   try {
