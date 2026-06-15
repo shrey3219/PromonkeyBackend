@@ -7,7 +7,8 @@ const { sendClientWelcomeEmail, sendClientEmailUpdateEmail, sendClientPasswordUp
 // POST /api/clients
 exports.createClient = async (req, res) => {
   try {
-    const { clientName, companyName, email, phone, address, notes, password } = req.body;
+    const body = req.body || {};
+    const { clientName, companyName, email, phone, address, notes, password } = body;
 
     if (!clientName || !email || !password || !phone || !address) {
       return res.status(400).json({ message: "clientName, email, phone, address, and password are required" });
@@ -41,7 +42,6 @@ exports.createClient = async (req, res) => {
       client = await Client.create({
         clientName,
         companyName,
-        email: email.toLowerCase().trim(),
         phone,
         address,
         notes,
@@ -54,13 +54,13 @@ exports.createClient = async (req, res) => {
       if (req.file && req.file.filename) {
         await cloudinary.uploader.destroy(req.file.filename).catch(() => {});
       }
-      if (clientError.code === 11000) {
-        return res.status(400).json({ message: "A client with this email already exists" });
-      }
       throw clientError;
     }
 
-    await client.populate("createdBy", "name email");
+    await client.populate([
+      { path: "createdBy", select: "name email" },
+      { path: "user", select: "name email profileImage" },
+    ]);
 
     sendClientWelcomeEmail(email, clientName, password).catch((err) => {
       console.error("Failed to send client welcome email:", err.message);
@@ -68,9 +68,6 @@ exports.createClient = async (req, res) => {
 
     res.status(201).json(client);
   } catch (error) {
-    if (error.code === 11000) {
-      return res.status(400).json({ message: "A client with this email already exists" });
-    }
     res.status(500).json({ message: error.message });
   }
 };
@@ -108,6 +105,7 @@ exports.updateClient = async (req, res) => {
   try {
     const body = req.body || {};
 
+    // Parse all fields — keep empty string as-is so validation can catch it
     const clientName  = body.clientName  !== undefined ? String(body.clientName).trim()  : undefined;
     const companyName = body.companyName !== undefined ? String(body.companyName).trim()  : undefined;
     const email       = body.email       !== undefined ? String(body.email).trim()        : undefined;
@@ -116,71 +114,71 @@ exports.updateClient = async (req, res) => {
     const notes       = body.notes       !== undefined ? String(body.notes).trim()        : undefined;
     const password    = body.password    !== undefined ? String(body.password).trim()     : undefined;
 
-    if (!req.file && Object.values({ clientName, companyName, email, phone, address, notes, password }).every(v => v === undefined)) {
+    // Nothing provided at all
+    if (!req.file && [clientName, companyName, email, phone, address, notes, password].every(v => v === undefined)) {
       return res.status(400).json({ message: "No fields provided to update" });
     }
 
-    const client = await Client.findById(req.params.id);
+    const client = await Client.findById(req.params.id).populate("user", "_id email");
     if (!client) {
       return res.status(404).json({ message: "Client not found" });
     }
 
-    if (clientName  !== undefined && clientName  === "") return res.status(400).json({ message: "Client name cannot be empty" });
-    if (email       !== undefined && email       === "") return res.status(400).json({ message: "Email cannot be empty" });
-    if (phone       !== undefined && phone       === "") return res.status(400).json({ message: "Phone number cannot be empty" });
-    if (address     !== undefined && address     === "") return res.status(400).json({ message: "Address cannot be empty" });
-    if (password    !== undefined && password    === "") return res.status(400).json({ message: "Password cannot be empty" });
-    if (password    !== undefined && password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
+    // ── Validate: required fields cannot be sent as empty ──
+    if (clientName !== undefined && clientName === "") return res.status(400).json({ message: "Client name cannot be empty" });
+    if (email      !== undefined && email      === "") return res.status(400).json({ message: "Email cannot be empty" });
+    if (phone      !== undefined && phone      === "") return res.status(400).json({ message: "Phone number cannot be empty" });
+    if (address    !== undefined && address    === "") return res.status(400).json({ message: "Address cannot be empty" });
+    if (password   !== undefined && password   === "") return res.status(400).json({ message: "Password cannot be empty" });
+    if (password   !== undefined && password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
 
-  
-    const normalizedEmail = (email !== undefined && email !== "") ? email.toLowerCase() : undefined;
-    const emailChanged = normalizedEmail !== undefined && normalizedEmail !== client.email;
-
+    // ── Email lives only in User — check against User collection ──
+    const currentEmail = client.user?.email || "";
+    const normalizedEmail = email !== undefined ? email.toLowerCase() : undefined;
+    const emailChanged = normalizedEmail !== undefined && normalizedEmail !== currentEmail;
 
     if (emailChanged) {
-      const emailInClient = await Client.findOne({ email: normalizedEmail, _id: { $ne: client._id } });
-      if (emailInClient) {
-        return res.status(400).json({ message: "A client with this email already exists" });
-      }
-      const emailInUser = await User.findOne({ email: normalizedEmail, _id: { $ne: client.user } });
-      if (emailInUser) {
+      const emailTaken = await User.findOne({ email: normalizedEmail, _id: { $ne: client.user._id } });
+      if (emailTaken) {
         return res.status(400).json({ message: "A user with this email already exists" });
       }
     }
 
+    // ── Phone uniqueness check ──
     const phoneChanged = phone !== undefined && phone !== client.phone;
     if (phoneChanged) {
-      const phoneTaken = await User.findOne({ phone, _id: { $ne: client.user } });
+      const phoneTaken = await User.findOne({ phone, _id: { $ne: client.user._id } });
       if (phoneTaken) {
         return res.status(400).json({ message: "A user with this phone number already exists" });
       }
     }
 
+    // ── Handle profile image upload ──
     if (req.file) {
-      if (client.profileImage && client.profileImage.publicId) {
+      if (client.profileImage?.publicId) {
         await cloudinary.uploader.destroy(client.profileImage.publicId).catch(() => {});
       }
       client.profileImage = { url: req.file.path, publicId: req.file.filename };
     }
 
+    // ── Build $set for Client (no email field here) ──
     const clientSet = {};
-    if (clientName    !== undefined) clientSet.clientName  = clientName;
-    if (companyName   !== undefined) clientSet.companyName = companyName;
-    if (normalizedEmail !== undefined) clientSet.email     = normalizedEmail;
-    if (phone         !== undefined) clientSet.phone       = phone;
-    if (address       !== undefined) clientSet.address     = address;
-    if (notes         !== undefined) clientSet.notes       = notes;
-    if (req.file)                    clientSet.profileImage = client.profileImage;
+    if (clientName  !== undefined) clientSet.clientName  = clientName;
+    if (companyName !== undefined) clientSet.companyName = companyName;
+    if (phone       !== undefined) clientSet.phone       = phone;
+    if (address     !== undefined) clientSet.address     = address;
+    if (notes       !== undefined) clientSet.notes       = notes;
+    if (req.file)                  clientSet.profileImage = client.profileImage;
 
-  
     if (Object.keys(clientSet).length > 0) {
       await Client.collection.updateOne({ _id: client._id }, { $set: clientSet });
     }
 
+    // ── Build $set for User ──
     const userSet = {};
-    if (clientName      !== undefined) userSet.name  = clientName;
-    if (normalizedEmail !== undefined) userSet.email = normalizedEmail;
-    if (phone           !== undefined) userSet.phone = phone;
+    if (clientName       !== undefined) userSet.name  = clientName;
+    if (normalizedEmail  !== undefined) userSet.email = normalizedEmail;
+    if (phone            !== undefined) userSet.phone = phone;
     if (req.file) {
       userSet["profileImage.url"]      = req.file.path;
       userSet["profileImage.publicId"] = req.file.filename;
@@ -189,33 +187,38 @@ exports.updateClient = async (req, res) => {
       userSet.password = await bcrypt.hash(password, 10);
     }
 
-    if (client.user && Object.keys(userSet).length > 0) {
-      await User.collection.updateOne({ _id: client.user }, { $set: userSet });
+    if (client.user?._id && Object.keys(userSet).length > 0) {
+      await User.collection.updateOne({ _id: client.user._id }, { $set: userSet });
     }
 
+    // ── Return fresh populated response ──
     const updatedClient = await Client.findById(client._id)
       .populate("createdBy", "name email")
       .populate("user", "name email profileImage");
 
-    if (emailChanged) {
+    if (!updatedClient) {
+      return res.status(500).json({ message: "Failed to fetch updated client" });
+    }
+
+    // ── Send notifications ──
+    if (emailChanged && normalizedEmail) {
       sendClientEmailUpdateEmail(normalizedEmail, updatedClient.clientName).catch((err) => {
         console.error("Email update notification failed:", err.message);
       });
     }
 
     if (password !== undefined) {
-      const notifyEmail = normalizedEmail ?? client.email;
-      sendClientPasswordUpdateEmail(notifyEmail, updatedClient.clientName, password).catch((err) => {
-        console.error("Password update notification failed:", err.message);
-      });
+      const notifyEmail = normalizedEmail || currentEmail;
+      if (notifyEmail) {
+        sendClientPasswordUpdateEmail(notifyEmail, updatedClient.clientName, password).catch((err) => {
+          console.error("Password update notification failed:", err.message);
+        });
+      }
     }
 
     res.json(updatedClient);
   } catch (error) {
     console.error("updateClient error:", error);
-    if (error.code === 11000) {
-      return res.status(400).json({ message: "A client with this email already exists" });
-    }
     res.status(500).json({ message: error.message });
   }
 };
@@ -232,7 +235,7 @@ exports.deleteClient = async (req, res) => {
       await User.findByIdAndDelete(client.user);
     }
 
-    if (client.profileImage && client.profileImage.publicId) {
+    if (client.profileImage?.publicId) {
       await cloudinary.uploader.destroy(client.profileImage.publicId).catch(() => {});
     }
 
