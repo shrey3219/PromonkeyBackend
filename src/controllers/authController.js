@@ -269,7 +269,6 @@ exports.updateProfile = async (req, res) => {
  
       const clientUpdateFields = {};
       if (name !== undefined) clientUpdateFields.clientName = name;
-      if (phone !== undefined) clientUpdateFields.phone = phone;
       if (companyName !== undefined) clientUpdateFields.companyName = companyName;
       if (address !== undefined) clientUpdateFields.address = address;
       if (notes !== undefined) clientUpdateFields.notes = notes;

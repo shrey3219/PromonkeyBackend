@@ -30,9 +30,12 @@ exports.createClient = async (req, res) => {
       : { url: "", publicId: "" };
 
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    // phone lives in User only
     const user = await User.create({
       name: clientName,
       email: email.toLowerCase().trim(),
+      phone,
       password: hashedPassword,
       role: "client",
       profileImage,
@@ -43,7 +46,6 @@ exports.createClient = async (req, res) => {
       client = await Client.create({
         clientName,
         companyName,
-        phone,
         address,
         notes,
         profileImage,
@@ -60,7 +62,7 @@ exports.createClient = async (req, res) => {
 
     await client.populate([
       { path: "createdBy", select: "name email" },
-      { path: "user", select: "name email profileImage" },
+      { path: "user", select: "name email phone profileImage" },
     ]);
 
     sendClientWelcomeEmail(email, clientName, password).catch((err) => {
@@ -86,7 +88,7 @@ exports.getClients = async (req, res) => {
         sort: { createdAt: -1 },
         populate: [
           { path: "createdBy", select: "name email" },
-          { path: "user", select: "name email profileImage" },
+          { path: "user", select: "name email phone profileImage" },
         ],
       }
     );
@@ -102,7 +104,7 @@ exports.getClientById = async (req, res) => {
   try {
     const client = await Client.findById(req.params.id)
       .populate("createdBy", "name email")
-      .populate("user", "name email profileImage");
+      .populate("user", "name email phone profileImage");
     if (!client) {
       return res.status(404).json({ message: "Client not found" });
     }
@@ -129,7 +131,7 @@ exports.updateClient = async (req, res) => {
       return res.status(400).json({ message: "No fields provided to update" });
     }
 
-    const client = await Client.findById(req.params.id).populate("user", "_id email");
+    const client = await Client.findById(req.params.id).populate("user", "_id email phone");
     if (!client) {
       return res.status(404).json({ message: "Client not found" });
     }
@@ -152,7 +154,8 @@ exports.updateClient = async (req, res) => {
       }
     }
 
-    const phoneChanged = phone !== undefined && phone !== client.phone;
+    const currentPhone = client.user?.phone || "";
+    const phoneChanged = phone !== undefined && phone !== currentPhone;
     if (phoneChanged) {
       const phoneTaken = await User.findOne({ phone, _id: { $ne: client.user._id } });
       if (phoneTaken) {
@@ -167,10 +170,10 @@ exports.updateClient = async (req, res) => {
       client.profileImage = { url: req.file.path, publicId: req.file.filename };
     }
 
+    // Client model mein sirf yeh fields hain — phone nahi
     const clientSet = {};
     if (clientName  !== undefined) clientSet.clientName  = clientName;
     if (companyName !== undefined) clientSet.companyName = companyName;
-    if (phone       !== undefined) clientSet.phone       = phone;
     if (address     !== undefined) clientSet.address     = address;
     if (notes       !== undefined) clientSet.notes       = notes;
     if (req.file)                  clientSet.profileImage = client.profileImage;
@@ -179,6 +182,7 @@ exports.updateClient = async (req, res) => {
       await Client.collection.updateOne({ _id: client._id }, { $set: clientSet });
     }
 
+    // phone sirf User mein save hoga
     const userSet = {};
     if (clientName       !== undefined) userSet.name  = clientName;
     if (normalizedEmail  !== undefined) userSet.email = normalizedEmail;
@@ -197,7 +201,7 @@ exports.updateClient = async (req, res) => {
 
     const updatedClient = await Client.findById(client._id)
       .populate("createdBy", "name email")
-      .populate("user", "name email profileImage");
+      .populate("user", "name email phone profileImage");
 
     if (!updatedClient) {
       return res.status(500).json({ message: "Failed to fetch updated client" });
