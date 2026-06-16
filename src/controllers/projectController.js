@@ -3,11 +3,16 @@ const Phase = require("../models/Phase");
 const Task = require("../models/Task");
 const Client = require("../models/Client");
 const { cloudinary } = require("../config/cloudinary");
+const { getPaginationOptions, paginatedResponse } = require("../utils/paginate");
 
 const populateProject = (query) =>
   query
     .populate("client", "clientName companyName email phone profileImage")
-    .populate("createdBy", "name email");
+    .populate("createdBy", "name email")
+    .populate({
+      path: "assignedEmployees",
+      populate: { path: "user", select: "name email profileImage" },
+    });
 
 // Calculate progress from phases
 const calcProgress = async (projectId) => {
@@ -72,6 +77,7 @@ exports.createProject = async (req, res) => {
       estimatedEndDate,
       status,
       priority,
+      assignedEmployees,
       phases, 
     } = req.body;
 
@@ -93,6 +99,11 @@ exports.createProject = async (req, res) => {
       fileType: file.mimetype,
     }));
 
+    let parsedAssignedEmployees = assignedEmployees;
+    if (typeof assignedEmployees === "string") {
+      try { parsedAssignedEmployees = JSON.parse(assignedEmployees); } catch { parsedAssignedEmployees = []; }
+    }
+
     const project = await Project.create({
       name,
       description,
@@ -101,6 +112,7 @@ exports.createProject = async (req, res) => {
       estimatedEndDate,
       status,
       priority,
+      assignedEmployees: Array.isArray(parsedAssignedEmployees) ? parsedAssignedEmployees : [],
       requirementDocs,
       createdBy: req.user._id,
     });
@@ -143,19 +155,23 @@ exports.getProjects = async (req, res) => {
   try {
     const filter = {};
     let employeeId = null;
+    const { page, limit } = getPaginationOptions(req.query);
 
     if (req.user.role === "client") {
       const clientRecord = await Client.findOne({ user: req.user._id });
-      if (!clientRecord) return res.json([]);
+      if (!clientRecord) return res.json({ data: [], pagination: { total: 0, page, limit, totalPages: 0, hasNextPage: false, hasPrevPage: false } });
       filter.client = clientRecord._id;
     }
 
     if (req.user.role === "employee") {
       const empRecord = await require("../models/Employee").findOne({ user: req.user._id });
-      if (!empRecord) return res.json([]);
+      if (!empRecord) return res.json({ data: [], pagination: { total: 0, page, limit, totalPages: 0, hasNextPage: false, hasPrevPage: false } });
       employeeId = empRecord._id;
       const assignedPhases = await Phase.find({ assignees: empRecord._id }, "project");
-      const projectIds = [...new Set(assignedPhases.map((p) => p.project.toString()))];
+      const phaseProjectIds = assignedPhases.map((p) => p.project.toString());
+      const directProjects = await Project.find({ assignedEmployees: empRecord._id }, "_id");
+      const directProjectIds = directProjects.map((p) => p._id.toString());
+      const projectIds = [...new Set([...phaseProjectIds, ...directProjectIds])];
       filter._id = { $in: projectIds };
     }
 
@@ -165,12 +181,37 @@ exports.getProjects = async (req, res) => {
       filter.client = req.query.client;
     }
 
-    const projects = await populateProject(
-      Project.find(filter).sort({ createdAt: -1 })
+    const result = await Project.paginate(filter, {
+      page,
+      limit,
+      sort: { createdAt: -1 },
+      populate: [
+        { path: "client", select: "clientName companyName email phone profileImage" },
+        { path: "createdBy", select: "name email" },
+        {
+          path: "assignedEmployees",
+          populate: { path: "user", select: "name email profileImage" },
+        },
+      ],
+    });
+
+    const docsWithPhases = await Promise.all(
+      result.docs.map((p) => getProjectWithPhases(p, employeeId))
     );
 
-    const result = await Promise.all(projects.map((p) => getProjectWithPhases(p, employeeId)));
-    res.json(result);
+    res.json({
+      data: docsWithPhases,
+      pagination: {
+        total:       result.totalDocs,
+        page:        result.page,
+        limit:       result.limit,
+        totalPages:  result.totalPages,
+        hasNextPage: result.hasNextPage,
+        hasPrevPage: result.hasPrevPage,
+        nextPage:    result.nextPage,
+        prevPage:    result.prevPage,
+      },
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -196,8 +237,13 @@ exports.getProjectById = async (req, res) => {
     if (req.user.role === "employee") {
       const empRecord = await require("../models/Employee").findOne({ user: req.user._id });
       if (!empRecord) return res.status(403).json({ message: "Access denied" });
+      const isDirectlyAssigned = project.assignedEmployees?.some(
+        (e) => e._id?.toString() === empRecord._id.toString()
+      );
       const assignedPhase = await Phase.findOne({ project: project._id, assignees: empRecord._id });
-      if (!assignedPhase) return res.status(403).json({ message: "Access denied" });
+      if (!isDirectlyAssigned && !assignedPhase) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       employeeId = empRecord._id;
     }
 
@@ -220,6 +266,7 @@ exports.updateProject = async (req, res) => {
       actualEndDate,
       status,
       priority,
+      assignedEmployees,
       phases,
     } = req.body;
 
@@ -243,6 +290,14 @@ exports.updateProject = async (req, res) => {
     if (actualEndDate !== undefined) project.actualEndDate = actualEndDate;
     if (status !== undefined) project.status = status;
     if (priority !== undefined) project.priority = priority;
+
+    if (assignedEmployees !== undefined) {
+      let parsedAssignedEmployees = assignedEmployees;
+      if (typeof assignedEmployees === "string") {
+        try { parsedAssignedEmployees = JSON.parse(assignedEmployees); } catch { parsedAssignedEmployees = []; }
+      }
+      project.assignedEmployees = Array.isArray(parsedAssignedEmployees) ? parsedAssignedEmployees : [];
+    }
 
     if (req.files && req.files.length > 0) {
       const newDocs = req.files.map((file) => ({
@@ -281,7 +336,6 @@ exports.updateProject = async (req, res) => {
 
             await Phase.findByIdAndUpdate(p._id, { $set: updateFields });
           } else {
-            // New phase — create
             await Phase.create({
               project: project._id,
               name: p.name,
@@ -306,7 +360,29 @@ exports.updateProject = async (req, res) => {
   }
 };
 
-// ─── DELETE /api/projects/:id 
+// ─── GET /api/projects/:id/employees
+exports.getProjectEmployees = async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id)
+      .populate({
+        path: "assignedEmployees",
+        populate: [
+          { path: "user", select: "name email profileImage" },
+          { path: "role", select: "name" },
+        ],
+      });
+
+    if (!project) {
+      return res.status(404).json({ message: "Project not found" });
+    }
+
+    res.json(project.assignedEmployees || []);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── DELETE /api/projects/:id
 exports.deleteProject = async (req, res) => {
   try {
     const project = await Project.findByIdAndDelete(req.params.id);

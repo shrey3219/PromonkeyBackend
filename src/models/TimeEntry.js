@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const mongoosePaginate = require("mongoose-paginate-v2");
 
 const timeEntrySchema = new mongoose.Schema(
   {
@@ -41,4 +42,5 @@ const timeEntrySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+timeEntrySchema.plugin(mongoosePaginate);
 module.exports = mongoose.model("TimeEntry", timeEntrySchema);

@@ -8,6 +8,7 @@ const {
   updateProject,
   deleteProject,
   deleteRequirementDoc,
+  getProjectEmployees,
 } = require("../controllers/projectController");
 
 router.post(
@@ -19,6 +20,7 @@ router.post(
 );
 router.get("/", protect, checkPermission("Projects", "read"), getProjects);
 router.get("/:id", protect, checkPermission("Projects", "read"), getProjectById);
+router.get("/:id/employees", protect, authorize("admin"), getProjectEmployees);
 router.put(
   "/:id",
   protect,

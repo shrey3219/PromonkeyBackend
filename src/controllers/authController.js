@@ -119,7 +119,7 @@ exports.employeeLogin = async (req, res) => {
       .populate({
         path: "role",
         select: "name permissions parentRole isActive",
-        populate: { path: "permissions", select: "name module actions isActive" },
+        populate: { path: "permissions", select: "name modules actions isActive" },
       })
       .select("-__v");
  
@@ -136,12 +136,17 @@ exports.employeeLogin = async (req, res) => {
     }
  
     const moduleMap = {};
-    (emp.role.permissions || []).forEach((p) => {
-      if (p.isActive) {
-        if (!moduleMap[p.module]) moduleMap[p.module] = [];
-        moduleMap[p.module].push(...(p.actions || []));
-      }
-    });
+      (emp.role.permissions || []).forEach((p) => {
+        if (p.isActive) {
+          (p.modules || []).forEach((mod) => {
+            if (!moduleMap[mod]) moduleMap[mod] = [];
+            // avoid duplicate actions
+            p.actions.forEach((a) => {
+              if (!moduleMap[mod].includes(a)) moduleMap[mod].push(a);
+            });
+          });
+        }
+      });
  
     const token = jwt.sign(
       { id: user._id, role: user.role },
@@ -406,7 +411,7 @@ exports.unifiedLogin = async (req, res) => {
         .populate({
           path: "role",
           select: "name permissions parentRole isActive",
-          populate: { path: "permissions", select: "name module actions isActive" },
+          populate: { path: "permissions", select: "name modules actions isActive" },
         });
  
       if (!emp) {
@@ -422,8 +427,12 @@ exports.unifiedLogin = async (req, res) => {
       const moduleMap = {};
       (emp.role.permissions || []).forEach((p) => {
         if (p.isActive) {
-          if (!moduleMap[p.module]) moduleMap[p.module] = [];
-          moduleMap[p.module].push(...(p.actions || []));
+          (p.modules || []).forEach((mod) => {
+            if (!moduleMap[mod]) moduleMap[mod] = [];
+            p.actions.forEach((a) => {
+              if (!moduleMap[mod].includes(a)) moduleMap[mod].push(a);
+            });
+          });
         }
       });
  
@@ -497,7 +506,7 @@ exports.getProfile = async (req, res) => {
         .populate({
           path: "role",
           select: "name permissions parentRole isActive",
-          populate: { path: "permissions", select: "name module actions isActive" },
+          populate: { path: "permissions", select: "name modules actions isActive" },
         });
 
       if (!emp) {
@@ -507,8 +516,12 @@ exports.getProfile = async (req, res) => {
       const moduleMap = {};
       (emp.role?.permissions || []).forEach((p) => {
         if (p.isActive) {
-          if (!moduleMap[p.module]) moduleMap[p.module] = [];
-          moduleMap[p.module].push(...(p.actions || []));
+          (p.modules || []).forEach((mod) => {
+            if (!moduleMap[mod]) moduleMap[mod] = [];
+            p.actions.forEach((a) => {
+              if (!moduleMap[mod].includes(a)) moduleMap[mod].push(a);
+            });
+          });
         }
       });
 

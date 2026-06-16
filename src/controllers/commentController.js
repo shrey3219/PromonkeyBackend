@@ -3,6 +3,7 @@ const Task = require("../models/Task");
 const Phase = require("../models/Phase");
 const Project = require("../models/Project");
 const Employee = require("../models/Employee");
+const { getPaginationOptions, paginatedResponse } = require("../utils/paginate");
 
 const populateComment = (query) =>
   query
@@ -107,31 +108,40 @@ exports.createComment = async (req, res) => {
 exports.getComments = async (req, res) => {
   try {
     const { task, phase, project } = req.query;
+    const { page, limit } = getPaginationOptions(req.query);
 
     if (!task && !phase && !project) {
       return res.status(400).json({ message: "Either task, phase, or project query param is required" });
     }
 
+    let filter = {};
+    let accessAllowed = false;
+
     if (task) {
-      const allowed = await canAccessTask(req.user, task);
-      if (!allowed) return res.status(403).json({ message: "Access denied. You are not assigned to this task." });
-      const comments = await populateComment(Comment.find({ task }).sort({ createdAt: 1 }));
-      return res.json(comments);
+      accessAllowed = await canAccessTask(req.user, task);
+      if (!accessAllowed) return res.status(403).json({ message: "Access denied. You are not assigned to this task." });
+      filter = { task };
+    } else if (phase) {
+      accessAllowed = await canAccessPhase(req.user, phase);
+      if (!accessAllowed) return res.status(403).json({ message: "Access denied. You are not assigned to this phase." });
+      filter = { phase };
+    } else if (project) {
+      accessAllowed = await canAccessProject(req.user, project);
+      if (!accessAllowed) return res.status(403).json({ message: "Access denied. You are not assigned to this project." });
+      filter = { project };
     }
 
-    if (phase) {
-      const allowed = await canAccessPhase(req.user, phase);
-      if (!allowed) return res.status(403).json({ message: "Access denied. You are not assigned to this phase." });
-      const comments = await populateComment(Comment.find({ phase }).sort({ createdAt: 1 }));
-      return res.json(comments);
-    }
+    const result = await Comment.paginate(filter, {
+      page,
+      limit,
+      sort: { createdAt: 1 },
+      populate: [
+        { path: "author",      select: "name email profileImage role" },
+        { path: "taggedUsers", select: "name email profileImage role" },
+      ],
+    });
 
-    if (project) {
-      const allowed = await canAccessProject(req.user, project);
-      if (!allowed) return res.status(403).json({ message: "Access denied. You are not assigned to this project." });
-      const comments = await populateComment(Comment.find({ project }).sort({ createdAt: 1 }));
-      return res.json(comments);
-    }
+    res.json(paginatedResponse(result));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

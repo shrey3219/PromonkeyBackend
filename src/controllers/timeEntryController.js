@@ -2,6 +2,7 @@ const TimeEntry = require("../models/TimeEntry");
 const Task = require("../models/Task");
 const Phase = require("../models/Phase");
 const Employee = require("../models/Employee");
+const { getPaginationOptions, paginatedResponse } = require("../utils/paginate");
 
 const populateEntry = (query) =>
   query
@@ -82,25 +83,42 @@ exports.logTime = async (req, res) => {
   }
 };
 
-// ─── GET /api/time-entries 
+// ─── GET /api/time-entries
 exports.getTimeEntries = async (req, res) => {
   try {
     const filter = {};
-    if (req.query.task)    filter.task = req.query.task;
-    if (req.query.phase)   filter.phase = req.query.phase;
-    if (req.query.project) filter.project = req.query.project;
+    if (req.query.task)     filter.task     = req.query.task;
+    if (req.query.phase)    filter.phase    = req.query.phase;
+    if (req.query.project)  filter.project  = req.query.project;
     if (req.query.employee) filter.employee = req.query.employee;
 
     if (req.user.role === "employee") {
       const employee = await Employee.findOne({ user: req.user._id });
-      if (!employee) return res.json([]);
+      if (!employee) return res.json({ data: [], pagination: { total: 0, page: 1, limit: 10, totalPages: 0, hasNextPage: false, hasPrevPage: false } });
       filter.employee = employee._id;
     }
 
-    const entries = await populateEntry(
-      TimeEntry.find(filter).sort({ date: -1 })
-    );
-    res.json(entries);
+    const { page, limit } = getPaginationOptions(req.query);
+
+    const result = await TimeEntry.paginate(filter, {
+      page,
+      limit,
+      sort: { date: -1 },
+      populate: [
+        { path: "task",    select: "name status" },
+        { path: "phase",   select: "name" },
+        { path: "project", select: "name" },
+        {
+          path: "employee",
+          populate: [
+            { path: "user", select: "name email profileImage" },
+            { path: "role", select: "name" },
+          ],
+        },
+      ],
+    });
+
+    res.json(paginatedResponse(result));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

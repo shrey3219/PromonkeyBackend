@@ -1,6 +1,7 @@
 const Role = require("../models/Role");
 const Permission = require("../models/Permission");
 const Employee = require("../models/Employee");
+const { getPaginationOptions, paginatedResponse } = require("../utils/paginate");
 
 // POST /api/roles
 exports.createRole = async (req, res) => {
@@ -40,7 +41,7 @@ exports.createRole = async (req, res) => {
 
     const populated = await role.populate([
       { path: "parentRole", select: "name" },
-      { path: "permissions", select: "name module actions" },
+      { path: "permissions", select: "name modules actions" },
     ]);
 
     res.status(201).json(populated);
@@ -50,13 +51,24 @@ exports.createRole = async (req, res) => {
 };
 
 // GET /api/roles
-exports.getRoles = async (_req, res) => {
+exports.getRoles = async (req, res) => {
   try {
-    const roles = await Role.find()
-      .populate("parentRole", "name")
-      .populate("permissions", "name module actions")
-      .sort({ name: 1 });
-    res.json(roles);
+    const { page, limit } = getPaginationOptions(req.query);
+
+    const result = await Role.paginate(
+      {},
+      {
+        page,
+        limit,
+        sort: { name: 1 },
+        populate: [
+          { path: "parentRole",  select: "name" },
+          { path: "permissions", select: "name modules actions" },
+        ],
+      }
+    );
+
+    res.json(paginatedResponse(result));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -66,7 +78,7 @@ exports.getRoles = async (_req, res) => {
 exports.getRoleHierarchy = async (_req, res) => {
   try {
     const roles = await Role.find()
-      .populate("permissions", "name module actions")
+      .populate("permissions", "name modules actions")
       .lean();
 
     const map = {};
@@ -93,7 +105,7 @@ exports.getRoleById = async (req, res) => {
   try {
     const role = await Role.findById(req.params.id)
       .populate("parentRole", "name")
-      .populate("permissions", "name module actions");
+      .populate("permissions", "name modules actions");
     if (!role) return res.status(404).json({ message: "Role not found" });
     res.json(role);
   } catch (error) {
@@ -136,7 +148,7 @@ exports.updateRole = async (req, res) => {
       { new: true, runValidators: true }
     )
       .populate("parentRole", "name")
-      .populate("permissions", "name module actions");
+      .populate("permissions", "name modules actions");
 
     if (!role) return res.status(404).json({ message: "Role not found" });
     res.json(role);

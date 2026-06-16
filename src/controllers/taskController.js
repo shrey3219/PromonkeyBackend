@@ -2,6 +2,7 @@ const Task = require("../models/Task");
 const Phase = require("../models/Phase");
 const Employee = require("../models/Employee");
 const Project = require("../models/Project");
+const { getPaginationOptions, paginatedResponse } = require("../utils/paginate");
 
 const populateTask = (query) =>
   query
@@ -62,23 +63,41 @@ exports.createTask = async (req, res) => {
   }
 };
 
-// ─── GET /api/tasks?phase=:phaseId&project=:projectId&assignedTo=:empId 
+// ─── GET /api/tasks?phase=:phaseId&project=:projectId&assignedTo=:empId
 exports.getTasks = async (req, res) => {
   try {
     const filter = {};
-    if (req.query.phase) filter.phase = req.query.phase;
-    if (req.query.project) filter.project = req.query.project;
+    if (req.query.phase)      filter.phase      = req.query.phase;
+    if (req.query.project)    filter.project    = req.query.project;
     if (req.query.assignedTo) filter.assignedTo = req.query.assignedTo;
-    if (req.query.status) filter.status = req.query.status;
+    if (req.query.status)     filter.status     = req.query.status;
 
     if (req.user.role === "employee") {
       const empRecord = await Employee.findOne({ user: req.user._id });
-      if (!empRecord) return res.json([]);
+      if (!empRecord) return res.json({ data: [], pagination: { total: 0, page: 1, limit: 10, totalPages: 0, hasNextPage: false, hasPrevPage: false } });
       filter.assignedTo = empRecord._id;
     }
 
-    const tasks = await populateTask(Task.find(filter).sort({ createdAt: 1 }));
-    res.json(tasks);
+    const { page, limit } = getPaginationOptions(req.query);
+
+    const result = await Task.paginate(filter, {
+      page,
+      limit,
+      sort: { createdAt: 1 },
+      populate: [
+        { path: "phase",    select: "name status" },
+        { path: "project",  select: "name" },
+        {
+          path: "assignedTo",
+          populate: [
+            { path: "user", select: "name email profileImage" },
+            { path: "role", select: "name" },
+          ],
+        },
+      ],
+    });
+
+    res.json(paginatedResponse(result));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const mongoosePaginate = require("mongoose-paginate-v2");
 
 const requirementDocSchema = new mongoose.Schema(
   {
@@ -65,6 +66,12 @@ const projectSchema = new mongoose.Schema(
       default: "medium",
     },
     requirementDocs: [requirementDocSchema],
+    assignedEmployees: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Employee",
+      },
+    ],
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -74,4 +81,5 @@ const projectSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+projectSchema.plugin(mongoosePaginate);
 module.exports = mongoose.model("Project", projectSchema);

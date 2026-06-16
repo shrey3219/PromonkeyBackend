@@ -173,4 +173,90 @@ const sendClientPasswordUpdateEmail = async (toEmail, name, password) => {
   await transporter.sendMail(mailOptions);
 };
 
-module.exports = { sendEmployeeWelcomeEmail, sendClientWelcomeEmail, sendClientEmailUpdateEmail, sendClientPasswordUpdateEmail };
+/**
+ * @param {string} newEmail  - The new (updated) email address
+ * @param {string} name      - Employee's name
+ */
+const sendEmployeeEmailUpdateEmail = async (newEmail, name) => {
+  const mailOptions = {
+    from: process.env.EMAIL_FROM,
+    to: newEmail,
+    subject: "ProMonkey — Your Login Email Has Been Updated",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e0e0e0; border-radius: 8px;">
+        <h2 style="color: #4F46E5;">Email Address Updated, ${name}!</h2>
+        <p>Your ProMonkey team portal login email has been updated by the admin.</p>
+
+        <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+          <tr>
+            <td style="padding: 10px; background: #f5f5f5; font-weight: bold; width: 40%;">New Login Email</td>
+            <td style="padding: 10px; background: #fafafa;">${newEmail}</td>
+          </tr>
+        </table>
+
+        <p style="color: #e53e3e; font-size: 13px;">
+          ⚠️ Please use this new email address for all future logins.
+        </p>
+
+        <p style="margin-top: 24px; color: #555;">
+          If you did not expect this change, please contact your administrator immediately.
+        </p>
+
+        <p style="color: #888; font-size: 12px; margin-top: 32px;">— ProMonkey CRM Team</p>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+/**
+ * @param {string} toEmail   - Employee's (possibly updated) email
+ * @param {string} name      - Employee's name
+ * @param {string} password  - New plain-text password
+ */
+const sendEmployeePasswordUpdateEmail = async (toEmail, name, password) => {
+  const mailOptions = {
+    from: process.env.EMAIL_FROM,
+    to: toEmail,
+    subject: "ProMonkey — Your Password Has Been Updated",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e0e0e0; border-radius: 8px;">
+        <h2 style="color: #4F46E5;">Password Updated, ${name}!</h2>
+        <p>Your ProMonkey team portal password has been reset by the admin. Here are your new credentials:</p>
+
+        <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+          <tr>
+            <td style="padding: 10px; background: #f5f5f5; font-weight: bold; width: 40%;">Email</td>
+            <td style="padding: 10px; background: #fafafa;">${toEmail}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; background: #f5f5f5; font-weight: bold;">New Password</td>
+            <td style="padding: 10px; background: #fafafa;">${password}</td>
+          </tr>
+        </table>
+
+        <p style="color: #e53e3e; font-size: 13px;">
+          ⚠️ Please log in and change your password immediately for security.
+        </p>
+
+        <p style="margin-top: 24px; color: #555;">
+          If you did not expect this change, please contact your administrator immediately.
+        </p>
+
+        <p style="color: #888; font-size: 12px; margin-top: 32px;">— ProMonkey CRM Team</p>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+module.exports = {
+  sendEmployeeWelcomeEmail,
+  sendEmployeeEmailUpdateEmail,
+  sendEmployeePasswordUpdateEmail,
+  sendClientWelcomeEmail,
+  sendClientEmailUpdateEmail,
+  sendClientPasswordUpdateEmail,
+};

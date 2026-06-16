@@ -1,6 +1,7 @@
 const Phase = require("../models/Phase");
 const Project = require("../models/Project");
 const Employee = require("../models/Employee");
+const { getPaginationOptions, paginatedResponse } = require("../utils/paginate");
 
 const populatePhase = (query) =>
   query.populate({
@@ -61,7 +62,7 @@ exports.createPhase = async (req, res) => {
   }
 };
 
-// ─── GET /api/phases?project=:projectId 
+// ─── GET /api/phases?project=:projectId
 exports.getPhases = async (req, res) => {
   try {
     const filter = {};
@@ -69,15 +70,28 @@ exports.getPhases = async (req, res) => {
 
     if (req.user.role === "employee") {
       const empRecord = await Employee.findOne({ user: req.user._id });
-      if (!empRecord) return res.json([]);
+      if (!empRecord) return res.json({ data: [], pagination: { total: 0, page: 1, limit: 10, totalPages: 0, hasNextPage: false, hasPrevPage: false } });
       filter.assignees = empRecord._id;
     }
 
-    const phases = await populatePhase(
-      Phase.find(filter).sort({ order: 1, createdAt: 1 })
-    );
+    const { page, limit } = getPaginationOptions(req.query);
 
-    res.json(phases);
+    const result = await Phase.paginate(filter, {
+      page,
+      limit,
+      sort: { order: 1, createdAt: 1 },
+      populate: [
+        {
+          path: "assignees",
+          populate: [
+            { path: "user", select: "name email profileImage" },
+            { path: "role", select: "name" },
+          ],
+        },
+      ],
+    });
+
+    res.json(paginatedResponse(result));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -161,6 +175,19 @@ exports.deletePhase = async (req, res) => {
       return res.status(404).json({ message: "Phase not found" });
     }
     res.json({ message: "Phase deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── GET /api/phases/:id/employees
+exports.getPhaseEmployees = async (req, res) => {
+  try {
+    const phase = await populatePhase(Phase.findById(req.params.id));
+    if (!phase) {
+      return res.status(404).json({ message: "Phase not found" });
+    }
+    res.json(phase.assignees || []);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

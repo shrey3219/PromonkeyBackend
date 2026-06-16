@@ -3,6 +3,7 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const { cloudinary } = require("../config/cloudinary");
 const { sendClientWelcomeEmail, sendClientEmailUpdateEmail, sendClientPasswordUpdateEmail } = require("../utils/sendEmail");
+const { getPaginationOptions, paginatedResponse } = require("../utils/paginate");
 
 // POST /api/clients
 exports.createClient = async (req, res) => {
@@ -73,13 +74,24 @@ exports.createClient = async (req, res) => {
 };
 
 // GET /api/clients
-exports.getClients = async (_req, res) => {
+exports.getClients = async (req, res) => {
   try {
-    const clients = await Client.find()
-      .populate("createdBy", "name email")
-      .populate("user", "name email profileImage")
-      .sort({ createdAt: -1 });
-    res.json(clients);
+    const { page, limit } = getPaginationOptions(req.query);
+
+    const result = await Client.paginate(
+      {},
+      {
+        page,
+        limit,
+        sort: { createdAt: -1 },
+        populate: [
+          { path: "createdBy", select: "name email" },
+          { path: "user", select: "name email profileImage" },
+        ],
+      }
+    );
+
+    res.json(paginatedResponse(result));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -105,7 +117,6 @@ exports.updateClient = async (req, res) => {
   try {
     const body = req.body || {};
 
-    // Parse all fields — keep empty string as-is so validation can catch it
     const clientName  = body.clientName  !== undefined ? String(body.clientName).trim()  : undefined;
     const companyName = body.companyName !== undefined ? String(body.companyName).trim()  : undefined;
     const email       = body.email       !== undefined ? String(body.email).trim()        : undefined;
@@ -114,7 +125,6 @@ exports.updateClient = async (req, res) => {
     const notes       = body.notes       !== undefined ? String(body.notes).trim()        : undefined;
     const password    = body.password    !== undefined ? String(body.password).trim()     : undefined;
 
-    // Nothing provided at all
     if (!req.file && [clientName, companyName, email, phone, address, notes, password].every(v => v === undefined)) {
       return res.status(400).json({ message: "No fields provided to update" });
     }
@@ -124,7 +134,6 @@ exports.updateClient = async (req, res) => {
       return res.status(404).json({ message: "Client not found" });
     }
 
-    // ── Validate: required fields cannot be sent as empty ──
     if (clientName !== undefined && clientName === "") return res.status(400).json({ message: "Client name cannot be empty" });
     if (email      !== undefined && email      === "") return res.status(400).json({ message: "Email cannot be empty" });
     if (phone      !== undefined && phone      === "") return res.status(400).json({ message: "Phone number cannot be empty" });
@@ -132,7 +141,6 @@ exports.updateClient = async (req, res) => {
     if (password   !== undefined && password   === "") return res.status(400).json({ message: "Password cannot be empty" });
     if (password   !== undefined && password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
 
-    // ── Email lives only in User — check against User collection ──
     const currentEmail = client.user?.email || "";
     const normalizedEmail = email !== undefined ? email.toLowerCase() : undefined;
     const emailChanged = normalizedEmail !== undefined && normalizedEmail !== currentEmail;
@@ -144,7 +152,6 @@ exports.updateClient = async (req, res) => {
       }
     }
 
-    // ── Phone uniqueness check ──
     const phoneChanged = phone !== undefined && phone !== client.phone;
     if (phoneChanged) {
       const phoneTaken = await User.findOne({ phone, _id: { $ne: client.user._id } });
@@ -153,7 +160,6 @@ exports.updateClient = async (req, res) => {
       }
     }
 
-    // ── Handle profile image upload ──
     if (req.file) {
       if (client.profileImage?.publicId) {
         await cloudinary.uploader.destroy(client.profileImage.publicId).catch(() => {});
@@ -161,7 +167,6 @@ exports.updateClient = async (req, res) => {
       client.profileImage = { url: req.file.path, publicId: req.file.filename };
     }
 
-    // ── Build $set for Client (no email field here) ──
     const clientSet = {};
     if (clientName  !== undefined) clientSet.clientName  = clientName;
     if (companyName !== undefined) clientSet.companyName = companyName;
@@ -174,7 +179,6 @@ exports.updateClient = async (req, res) => {
       await Client.collection.updateOne({ _id: client._id }, { $set: clientSet });
     }
 
-    // ── Build $set for User ──
     const userSet = {};
     if (clientName       !== undefined) userSet.name  = clientName;
     if (normalizedEmail  !== undefined) userSet.email = normalizedEmail;
@@ -191,7 +195,6 @@ exports.updateClient = async (req, res) => {
       await User.collection.updateOne({ _id: client.user._id }, { $set: userSet });
     }
 
-    // ── Return fresh populated response ──
     const updatedClient = await Client.findById(client._id)
       .populate("createdBy", "name email")
       .populate("user", "name email profileImage");
@@ -200,7 +203,6 @@ exports.updateClient = async (req, res) => {
       return res.status(500).json({ message: "Failed to fetch updated client" });
     }
 
-    // ── Send notifications ──
     if (emailChanged && normalizedEmail) {
       sendClientEmailUpdateEmail(normalizedEmail, updatedClient.clientName).catch((err) => {
         console.error("Email update notification failed:", err.message);
@@ -226,10 +228,20 @@ exports.updateClient = async (req, res) => {
 // DELETE /api/clients/:id
 exports.deleteClient = async (req, res) => {
   try {
-    const client = await Client.findByIdAndDelete(req.params.id);
+    const client = await Client.findById(req.params.id);
     if (!client) {
       return res.status(404).json({ message: "Client not found" });
     }
+
+    const Project = require("../models/Project");
+    const projectCount = await Project.countDocuments({ client: client._id });
+    if (projectCount > 0) {
+      return res.status(400).json({
+        message: `Cannot delete client. They are assigned to ${projectCount} project(s). Please reassign or delete those projects first.`,
+      });
+    }
+
+    await Client.findByIdAndDelete(client._id);
 
     if (client.user) {
       await User.findByIdAndDelete(client.user);
