@@ -10,9 +10,9 @@ const {
 
 router.post("/", protect, authorize("admin"), createTask);
 
-router.get("/", protect, blockClient, checkPermission("Projects", "read"), getTasks);
+router.get("/", protect, blockClient, checkPermission("Tasks", "read"), getTasks);
 
-router.get("/:id", protect, blockClient, checkPermission("Projects", "read"), getTaskById);
+router.get("/:id", protect, blockClient, checkPermission("Tasks", "read"), getTaskById);
 
 router.put("/:id", protect, authorize("admin"), updateTask);
 

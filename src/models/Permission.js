@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const mongoosePaginate = require("mongoose-paginate-v2");
 
-const ACTIONS = ["create", "read", "update", "delete"];
+const VALID_ACTIONS = ["create", "read", "update", "delete"];
 
 const VALID_MODULES = [
   "Projects",
@@ -16,6 +16,31 @@ const VALID_MODULES = [
   "Dashboard",
 ];
 
+const modulePermissionSchema = new mongoose.Schema(
+  {
+    module: {
+      type: String,
+      required: true,
+      enum: {
+        values: VALID_MODULES,
+        message: `module must be one of: ${VALID_MODULES.join(", ")}`,
+      },
+    },
+    actions: {
+      type: [String],
+      required: true,
+      validate: {
+        validator: (arr) =>
+          Array.isArray(arr) &&
+          arr.length > 0 &&
+          arr.every((a) => VALID_ACTIONS.includes(a)),
+        message: `Each action must be one of: ${VALID_ACTIONS.join(", ")}`,
+      },
+    },
+  },
+  { _id: false }
+);
+
 const permissionSchema = new mongoose.Schema(
   {
     name: {
@@ -24,29 +49,13 @@ const permissionSchema = new mongoose.Schema(
       sparse: true,
       trim: true,
     },
-
-    // Array of modules this permission applies to
-    modules: {
-      type: [String],
+    
+    permissions: {
+      type: [modulePermissionSchema],
       required: true,
       validate: {
-        validator: (arr) =>
-          Array.isArray(arr) &&
-          arr.length > 0 &&
-          arr.every((m) => VALID_MODULES.includes(m)),
-        message: `Each module must be one of: ${VALID_MODULES.join(", ")}`,
-      },
-    },
-
-    actions: {
-      type: [String],
-      required: true,
-      validate: {
-        validator: (arr) =>
-          Array.isArray(arr) &&
-          arr.length > 0 &&
-          arr.every((a) => ACTIONS.includes(a)),
-        message: `Each action must be one of: ${ACTIONS.join(", ")}`,
+        validator: (arr) => Array.isArray(arr) && arr.length > 0,
+        message: "At least one module-permission entry is required",
       },
     },
 
@@ -61,3 +70,4 @@ const permissionSchema = new mongoose.Schema(
 permissionSchema.plugin(mongoosePaginate);
 module.exports = mongoose.model("Permission", permissionSchema);
 module.exports.VALID_MODULES = VALID_MODULES;
+module.exports.VALID_ACTIONS = VALID_ACTIONS;

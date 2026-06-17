@@ -1,45 +1,57 @@
 const Permission = require("../models/Permission");
-const { VALID_MODULES } = require("../models/Permission");
+const { VALID_MODULES, VALID_ACTIONS } = require("../models/Permission");
 const Role = require("../models/Role");
 const { getPaginationOptions, paginatedResponse } = require("../utils/paginate");
 
-const VALID_ACTIONS = ["create", "read", "update", "delete"];
 
-function parseActions(input) {
-  const raw = Array.isArray(input) ? input : [input];
-  const actions = [...new Set(raw.map((a) => String(a).toLowerCase()))];
+function parsePermissions(input) {
+  if (!Array.isArray(input) || input.length === 0) {
+    return { error: "permissions must be a non-empty array of { module, actions[] } objects" };
+  }
 
-  const invalid = actions.filter((a) => !VALID_ACTIONS.includes(a));
-  if (invalid.length) {
-    return {
-      error: `Invalid action(s): ${invalid.join(", ")}. Must be one of: ${VALID_ACTIONS.join(", ")}`,
-    };
+  const seenModules = new Set();
+  const parsed = [];
+
+  for (const entry of input) {
+    if (!entry.module || !entry.actions) {
+      return { error: "Each permission entry must have 'module' and 'actions' fields" };
+    }
+
+    const module = String(entry.module).trim();
+    if (!VALID_MODULES.includes(module)) {
+      return {
+        error: `Invalid module "${module}". Must be one of: ${VALID_MODULES.join(", ")}`,
+      };
+    }
+
+    if (seenModules.has(module)) {
+      return { error: `Duplicate module "${module}" in permissions array` };
+    }
+    seenModules.add(module);
+
+    const rawActions = Array.isArray(entry.actions) ? entry.actions : [entry.actions];
+    const actions = [...new Set(rawActions.map((a) => String(a).toLowerCase()))];
+
+    const invalidActions = actions.filter((a) => !VALID_ACTIONS.includes(a));
+    if (invalidActions.length) {
+      return {
+        error: `Invalid action(s) for module "${module}": ${invalidActions.join(", ")}. Must be one of: ${VALID_ACTIONS.join(", ")}`,
+      };
+    }
+
+    if (actions.length === 0) {
+      return { error: `At least one action is required for module "${module}"` };
+    }
+
+    parsed.push({ module, actions });
   }
-  if (actions.length === 0) {
-    return { error: "At least one action is required." };
-  }
-  return { actions };
+
+  return { parsed };
 }
 
-function parseModules(input) {
-  const raw = Array.isArray(input) ? input : [input];
-  const modules = [...new Set(raw.map((m) => String(m).trim()))];
-
-  const invalid = modules.filter((m) => !VALID_MODULES.includes(m));
-  if (invalid.length) {
-    return {
-      error: `Invalid module(s): ${invalid.join(", ")}. Must be one of: ${VALID_MODULES.join(", ")}`,
-    };
-  }
-  if (modules.length === 0) {
-    return { error: "At least one module is required." };
-  }
-  return { modules };
-}
-
-// GET /api/permissions/valid-modules  — helper for frontend dropdowns
+// GET /api/permissions/valid-modules
 exports.getValidModules = (_req, res) => {
-  res.json({ modules: VALID_MODULES });
+  res.json({ modules: VALID_MODULES, actions: VALID_ACTIONS });
 };
 
 // GET /api/permissions
@@ -58,26 +70,22 @@ exports.getPermissions = async (req, res) => {
   }
 };
 
-// GET /api/permissions/grouped  — grouped by each module
+// GET /api/permissions/grouped  — grouped by module for frontend dropdowns
 exports.getPermissionsGrouped = async (_req, res) => {
   try {
     const permissions = await Permission.find({ isActive: true }).sort({ name: 1 });
 
     const grouped = {};
-
-    // Seed all valid modules so every module appears in response
-    VALID_MODULES.forEach((m) => {
-      grouped[m] = [];
-    });
+    VALID_MODULES.forEach((m) => { grouped[m] = []; });
 
     permissions.forEach((p) => {
-      p.modules.forEach((mod) => {
-        if (!grouped[mod]) grouped[mod] = [];
-        grouped[mod].push({
+      p.permissions.forEach(({ module, actions }) => {
+        if (!grouped[module]) grouped[module] = [];
+        grouped[module].push({
           _id: p._id,
           name: p.name,
-          modules: p.modules,
-          actions: p.actions,
+          module,
+          actions,
         });
       });
     });
@@ -96,17 +104,14 @@ exports.getPermissionsGrouped = async (_req, res) => {
 // POST /api/permissions
 exports.createPermission = async (req, res) => {
   try {
-    const { name, modules, actions } = req.body;
+    const { name, permissions } = req.body;
 
-    if (!modules || !actions) {
-      return res.status(400).json({ message: "modules and actions are required" });
+    if (!permissions) {
+      return res.status(400).json({ message: "permissions array is required" });
     }
 
-    const { modules: parsedModules, error: modError } = parseModules(modules);
-    if (modError) return res.status(400).json({ message: modError });
-
-    const { actions: parsedActions, error: actError } = parseActions(actions);
-    if (actError) return res.status(400).json({ message: actError });
+    const { parsed, error } = parsePermissions(permissions);
+    if (error) return res.status(400).json({ message: error });
 
     if (name) {
       const existing = await Permission.findOne({ name: name.trim() });
@@ -117,8 +122,7 @@ exports.createPermission = async (req, res) => {
 
     const permission = await Permission.create({
       ...(name && { name: name.trim() }),
-      modules: parsedModules,
-      actions: parsedActions,
+      permissions: parsed,
     });
 
     res.status(201).json(permission);
@@ -130,12 +134,12 @@ exports.createPermission = async (req, res) => {
 // PUT /api/permissions/:id
 exports.updatePermission = async (req, res) => {
   try {
-    const { name, modules, actions } = req.body;
+    const { name, permissions } = req.body;
 
-    if (!name && modules === undefined && actions === undefined) {
+    if (!name && permissions === undefined) {
       return res
         .status(400)
-        .json({ message: "Provide at least one field to update: name, modules, or actions" });
+        .json({ message: "Provide at least one field to update: name or permissions" });
     }
 
     const permission = await Permission.findById(req.params.id);
@@ -143,37 +147,24 @@ exports.updatePermission = async (req, res) => {
       return res.status(404).json({ message: "Permission not found" });
     }
 
-    const newName = name ? name.trim() : permission.name;
-
-    let newModules = permission.modules;
-    if (modules !== undefined) {
-      const { modules: parsedModules, error: modError } = parseModules(modules);
-      if (modError) return res.status(400).json({ message: modError });
-      newModules = parsedModules;
-    }
-
-    let newActions = permission.actions;
-    if (actions !== undefined) {
-      const { actions: parsedActions, error: actError } = parseActions(actions);
-      if (actError) return res.status(400).json({ message: actError });
-      newActions = parsedActions;
-    }
-
     if (name) {
       const nameTaken = await Permission.findOne({
-        name: newName,
+        name: name.trim(),
         _id: { $ne: req.params.id },
       });
       if (nameTaken) {
         return res.status(400).json({ message: "Permission with this name already exists" });
       }
+      permission.name = name.trim();
     }
 
-    permission.name = newName;
-    permission.modules = newModules;
-    permission.actions = newActions;
-    await permission.save();
+    if (permissions !== undefined) {
+      const { parsed, error } = parsePermissions(permissions);
+      if (error) return res.status(400).json({ message: error });
+      permission.permissions = parsed;
+    }
 
+    await permission.save();
     res.json(permission);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -201,7 +192,6 @@ exports.deletePermission = async (req, res) => {
     }
 
     await Permission.findByIdAndDelete(req.params.id);
-
     res.json({ message: "Permission deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });

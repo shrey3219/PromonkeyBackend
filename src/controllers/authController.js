@@ -119,7 +119,7 @@ exports.employeeLogin = async (req, res) => {
       .populate({
         path: "role",
         select: "name permissions parentRole isActive",
-        populate: { path: "permissions", select: "name modules actions isActive" },
+        populate: { path: "permissions", select: "name permissions isActive" },
       })
       .select("-__v");
  
@@ -136,17 +136,16 @@ exports.employeeLogin = async (req, res) => {
     }
  
     const moduleMap = {};
-      (emp.role.permissions || []).forEach((p) => {
-        if (p.isActive) {
-          (p.modules || []).forEach((mod) => {
-            if (!moduleMap[mod]) moduleMap[mod] = [];
-            // avoid duplicate actions
-            p.actions.forEach((a) => {
-              if (!moduleMap[mod].includes(a)) moduleMap[mod].push(a);
-            });
+    (emp.role.permissions || []).forEach((p) => {
+      if (p.isActive) {
+        (p.permissions || []).forEach(({ module, actions }) => {
+          if (!moduleMap[module]) moduleMap[module] = [];
+          actions.forEach((a) => {
+            if (!moduleMap[module].includes(a)) moduleMap[module].push(a);
           });
-        }
-      });
+        });
+      }
+    });
  
     const token = jwt.sign(
       { id: user._id, role: user.role },
@@ -295,7 +294,6 @@ exports.updateProfile = async (req, res) => {
               _id: updatedClient._id,
               clientName: updatedClient.clientName,
               companyName: updatedClient.companyName,
-              phone: updatedClient.phone,
               address: updatedClient.address,
               notes: updatedClient.notes,
               profileImage: updatedClient.profileImage,
@@ -342,7 +340,6 @@ exports.changePassword = async (req, res) => {
       return res.status(400).json({ message: "New password must be different from the current password" });
     }
  
-    // findOne use karo taaki password field zaroor aaye (model mein select:false nahi hai)
     const user = await User.findOne({ _id: userId });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -410,7 +407,7 @@ exports.unifiedLogin = async (req, res) => {
         .populate({
           path: "role",
           select: "name permissions parentRole isActive",
-          populate: { path: "permissions", select: "name modules actions isActive" },
+          populate: { path: "permissions", select: "name permissions isActive" },
         });
  
       if (!emp) {
@@ -426,10 +423,10 @@ exports.unifiedLogin = async (req, res) => {
       const moduleMap = {};
       (emp.role.permissions || []).forEach((p) => {
         if (p.isActive) {
-          (p.modules || []).forEach((mod) => {
-            if (!moduleMap[mod]) moduleMap[mod] = [];
-            p.actions.forEach((a) => {
-              if (!moduleMap[mod].includes(a)) moduleMap[mod].push(a);
+          (p.permissions || []).forEach(({ module, actions }) => {
+            if (!moduleMap[module]) moduleMap[module] = [];
+            actions.forEach((a) => {
+              if (!moduleMap[module].includes(a)) moduleMap[module].push(a);
             });
           });
         }
@@ -505,7 +502,7 @@ exports.getProfile = async (req, res) => {
         .populate({
           path: "role",
           select: "name permissions parentRole isActive",
-          populate: { path: "permissions", select: "name modules actions isActive" },
+          populate: { path: "permissions", select: "name permissions isActive" },
         });
 
       if (!emp) {
@@ -515,10 +512,10 @@ exports.getProfile = async (req, res) => {
       const moduleMap = {};
       (emp.role?.permissions || []).forEach((p) => {
         if (p.isActive) {
-          (p.modules || []).forEach((mod) => {
-            if (!moduleMap[mod]) moduleMap[mod] = [];
-            p.actions.forEach((a) => {
-              if (!moduleMap[mod].includes(a)) moduleMap[mod].push(a);
+          (p.permissions || []).forEach(({ module, actions }) => {
+            if (!moduleMap[module]) moduleMap[module] = [];
+            actions.forEach((a) => {
+              if (!moduleMap[module].includes(a)) moduleMap[module].push(a);
             });
           });
         }

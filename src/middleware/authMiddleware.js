@@ -53,7 +53,7 @@ const checkPermission = (module, action) => {
 
       const employee = await Employee.findOne({ user: req.user._id }).populate({
         path: "role",
-        populate: { path: "permissions", select: "modules actions isActive" },
+        populate: { path: "permissions", select: "permissions isActive" },
       });
 
       if (!employee || !employee.role) {
@@ -67,10 +67,13 @@ const checkPermission = (module, action) => {
       const hasPermission = employee.role.permissions.some(
         (p) =>
           p.isActive &&
-          Array.isArray(p.modules) &&
-          p.modules.includes(module) &&
-          Array.isArray(p.actions) &&
-          p.actions.includes(action.toLowerCase())
+          Array.isArray(p.permissions) &&
+          p.permissions.some(
+            (entry) =>
+              entry.module === module &&
+              Array.isArray(entry.actions) &&
+              entry.actions.includes(action.toLowerCase())
+          )
       );
 
       if (!hasPermission) {

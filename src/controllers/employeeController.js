@@ -89,7 +89,7 @@ exports.createEmployee = async (req, res) => {
       {
         path: "role",
         select: "name parentRole permissions",
-        populate: { path: "permissions", select: "name modules actions" },
+        populate: { path: "permissions", select: "name permissions isActive" },
       },
     ]);
 
@@ -127,7 +127,7 @@ exports.getEmployees = async (req, res) => {
           {
             path: "role",
             select: "name parentRole permissions",
-            populate: { path: "permissions", select: "name modules actions" },
+            populate: { path: "permissions", select: "name permissions isActive" },
           },
         ],
       }
@@ -147,7 +147,7 @@ exports.getEmployeeById = async (req, res) => {
       .populate({
         path: "role",
         select: "name parentRole permissions",
-        populate: { path: "permissions", select: "name modules actions" },
+        populate: { path: "permissions", select: "name permissions isActive" },
       });
 
     if (!employee) {
@@ -261,7 +261,7 @@ exports.updateEmployee = async (req, res) => {
       .populate({
         path: "role",
         select: "name parentRole permissions",
-        populate: { path: "permissions", select: "name modules actions" },
+        populate: { path: "permissions", select: "name permissions isActive" },
       });
 
     if (!updatedEmployee) {
