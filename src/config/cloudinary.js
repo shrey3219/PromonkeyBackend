@@ -36,12 +36,13 @@ const createUpload = (folder) => {
 const createDocUpload = (folder) => {
   const storage = new CloudinaryStorage({
     cloudinary,
-    params: (req, file) => {
+    params: async (req, file) => {
       const isImage = file.mimetype.startsWith("image/");
+      const resourceType = isImage ? "image" : "raw";
       return {
         folder,
-        resource_type: isImage ? "image" : "raw",
-        format: "",
+        resource_type: resourceType,
+        format: undefined,
         access_mode: "public",
         public_id: `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
       };
@@ -78,13 +79,14 @@ const createDocUpload = (folder) => {
 const createEditorUpload = (folder) => {
   const storage = new CloudinaryStorage({
     cloudinary,
-    params: (req, file) => {
+    params: async (req, file) => {
       const isImage = file.mimetype.startsWith("image/");
       const isVideo = file.mimetype.startsWith("video/");
+      const resourceType = isImage ? "image" : isVideo ? "video" : "raw";
       return {
         folder,
-        resource_type: isImage ? "image" : isVideo ? "video" : "raw",
-        format: "",
+        resource_type: resourceType,
+        format: undefined,
         access_mode: "public",
         public_id: `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
       };

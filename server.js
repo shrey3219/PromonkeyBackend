@@ -40,6 +40,21 @@ app.use("/api/dashboard", require("./src/routes/dashboardRoutes"));
 app.use("/api/upload", require("./src/routes/uploadRoutes"));
 app.use("/api/comments", require("./src/routes/commentRoutes"));
 
+// Multer / Cloudinary error handler
+app.use((err, req, res, next) => {
+  if (err.name === "MulterError") {
+    return res.status(400).json({ message: err.message });
+  }
+  if (err.message && err.http_code) {
+    // Cloudinary error
+    return res.status(err.http_code).json({ message: err.message });
+  }
+  if (err) {
+    return res.status(500).json({ message: err.message || "Internal server error" });
+  }
+  next();
+});
+
 // ─── Socket.io 
 io.on("connection", (socket) => {
   console.log(`Socket connected: ${socket.id}`);
