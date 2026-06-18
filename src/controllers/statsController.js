@@ -3,6 +3,8 @@ const Phase = require("../models/Phase");
 const Task = require("../models/Task");
 const TimeEntry = require("../models/TimeEntry");
 const Client = require("../models/Client");
+const Employee = require("../models/Employee");
+const mongoose = require("mongoose");
 
 const getWorkingDays = (startDate, endDate) => {
   let count = 0;
@@ -19,7 +21,7 @@ const getWorkingDays = (startDate, endDate) => {
 exports.getProjectStats = async (req, res) => {
   try {
     const project = await Project.findById(req.params.projectId)
-      .populate("client", "clientName companyName");
+      .populate("client", "companyName");
 
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
@@ -28,6 +30,17 @@ exports.getProjectStats = async (req, res) => {
     if (req.user.role === "client") {
       const clientRecord = await Client.findOne({ user: req.user._id });
       if (!clientRecord || project.client._id.toString() !== clientRecord._id.toString()) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
+    if (req.user.role === "employee") {
+      const empRecord = await Employee.findOne({ user: req.user._id });
+      if (!empRecord) return res.status(403).json({ message: "Access denied" });
+      const isCreator  = project.createdBy.toString() === req.user._id.toString();
+      const isMember   = project.assignedEmployees?.some((e) => e.toString() === empRecord._id.toString());
+      const hasPhase   = await Phase.findOne({ project: project._id, assignees: empRecord._id });
+      if (!isCreator && !isMember && !hasPhase) {
         return res.status(403).json({ message: "Access denied" });
       }
     }
@@ -150,8 +163,15 @@ exports.getProjectStats = async (req, res) => {
 
 exports.getEmployeeStats = async (req, res) => {
   try {
+    if (req.user.role === "employee") {
+      const empRecord = await Employee.findOne({ user: req.user._id });
+      if (!empRecord || empRecord._id.toString() !== req.params.employeeId) {
+        return res.status(403).json({ message: "Access denied. You can only view your own stats." });
+      }
+    }
+
     const entries = await TimeEntry.aggregate([
-      { $match: { employee: require("mongoose").Types.ObjectId.createFromHexString(req.params.employeeId) } },
+      { $match: { employee: new mongoose.Types.ObjectId(req.params.employeeId) } },
       {
         $group: {
           _id: "$project",

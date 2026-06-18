@@ -39,8 +39,14 @@ exports.logTime = async (req, res) => {
     if (req.user.role === "employee") {
       const isTaskAssigned = task.assignedTo?.toString() === employee._id.toString();
       const isPhaseAssigned = await Phase.findOne({ _id: task.phase, assignees: employee._id });
-      if (!isTaskAssigned && !isPhaseAssigned) {
-        return res.status(403).json({ message: "You can only log time on your assigned tasks." });
+      const Project = require("../models/Project");
+      const project = await Project.findById(task.project);
+      const isProjectCreator = project && project.createdBy.toString() === req.user._id.toString();
+      const isProjectMember  = project && project.assignedEmployees?.some(
+        (e) => e.toString() === employee._id.toString()
+      );
+      if (!isTaskAssigned && !isPhaseAssigned && !isProjectCreator && !isProjectMember) {
+        return res.status(403).json({ message: "You can only log time on tasks in your assigned projects." });
       }
     }
 
@@ -127,10 +133,19 @@ exports.getTimeEntries = async (req, res) => {
 // ─── DELETE /api/time-entries/:id 
 exports.deleteTimeEntry = async (req, res) => {
   try {
-    const entry = await TimeEntry.findByIdAndDelete(req.params.id);
+    const entry = await TimeEntry.findById(req.params.id);
     if (!entry) {
       return res.status(404).json({ message: "Time entry not found" });
     }
+
+    if (req.user.role === "employee") {
+      const employee = await Employee.findOne({ user: req.user._id });
+      if (!employee || entry.employee.toString() !== employee._id.toString()) {
+        return res.status(403).json({ message: "Access denied. You can only delete your own time entries." });
+      }
+    }
+
+    await entry.deleteOne();
 
     const task = await Task.findById(entry.task);
     if (task) {

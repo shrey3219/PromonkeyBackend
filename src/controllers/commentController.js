@@ -3,6 +3,7 @@ const Task = require("../models/Task");
 const Phase = require("../models/Phase");
 const Project = require("../models/Project");
 const Employee = require("../models/Employee");
+const User = require("../models/User");
 const { getPaginationOptions, paginatedResponse } = require("../utils/paginate");
 
 const populateComment = (query) =>
@@ -20,9 +21,17 @@ const canAccessTask = async (user, taskId) => {
     if (!emp) return false;
     const task = await Task.findById(taskId);
     if (!task) return false;
+   
     if (task.assignedTo?.toString() === emp._id.toString()) return true;
+  
     const phase = await Phase.findOne({ _id: task.phase, assignees: emp._id });
-    return !!phase;
+    if (phase) return true;
+
+    const project = await Project.findById(task.project);
+    if (!project) return false;
+    if (project.createdBy.toString() === user._id.toString()) return true;
+    if (project.assignedEmployees?.some((e) => e.toString() === emp._id.toString())) return true;
+    return false;
   }
   return false;
 };
@@ -32,8 +41,14 @@ const canAccessPhase = async (user, phaseId) => {
   if (user.role === "employee") {
     const emp = await getEmployee(user._id);
     if (!emp) return false;
-    const phase = await Phase.findOne({ _id: phaseId, assignees: emp._id });
-    return !!phase;
+    const phase = await Phase.findById(phaseId);
+    if (!phase) return false;
+    if (phase.assignees?.some((a) => a.toString() === emp._id.toString())) return true;
+    const project = await Project.findById(phase.project);
+    if (!project) return false;
+    if (project.createdBy.toString() === user._id.toString()) return true;
+    if (project.assignedEmployees?.some((e) => e.toString() === emp._id.toString())) return true;
+    return false;
   }
   return false;
 };
@@ -43,8 +58,13 @@ const canAccessProject = async (user, projectId) => {
   if (user.role === "employee") {
     const emp = await getEmployee(user._id);
     if (!emp) return false;
+    const project = await Project.findById(projectId);
+    if (!project) return false;
+    if (project.createdBy.toString() === user._id.toString()) return true;
+    if (project.assignedEmployees?.some((e) => e.toString() === emp._id.toString())) return true;
     const phase = await Phase.findOne({ project: projectId, assignees: emp._id });
-    return !!phase;
+    if (phase) return true;
+    return false;
   }
   return false;
 };
@@ -60,11 +80,17 @@ exports.createComment = async (req, res) => {
       return res.status(400).json({ message: "Either taskId, phaseId, or projectId is required" });
     }
 
+    let resolvedProjectId = projectId;
+
     if (taskId) {
       const task = await Task.findById(taskId);
       if (!task) return res.status(404).json({ message: "Task not found" });
       const allowed = await canAccessTask(req.user, taskId);
       if (!allowed) return res.status(403).json({ message: "Access denied. You are not assigned to this task." });
+      if (!resolvedProjectId) {
+        const phase = await Phase.findById(task.phase, "project");
+        if (phase) resolvedProjectId = phase.project;
+      }
     }
 
     if (phaseId) {
@@ -72,6 +98,7 @@ exports.createComment = async (req, res) => {
       if (!phase) return res.status(404).json({ message: "Phase not found" });
       const allowed = await canAccessPhase(req.user, phaseId);
       if (!allowed) return res.status(403).json({ message: "Access denied. You are not assigned to this phase." });
+      if (!resolvedProjectId) resolvedProjectId = phase.project;
     }
 
     if (projectId) {
@@ -81,13 +108,34 @@ exports.createComment = async (req, res) => {
       if (!allowed) return res.status(403).json({ message: "Access denied. You are not assigned to this project." });
     }
 
+    let validatedTaggedUsers = [];
+    if (taggedUsers && Array.isArray(taggedUsers) && taggedUsers.length > 0 && resolvedProjectId) {
+      const project = await Project.findById(resolvedProjectId)
+        .populate("createdBy", "_id")
+        .populate({ path: "assignedEmployees", populate: { path: "user", select: "_id" } });
+
+      if (project) {
+        const memberUserIds = new Set();
+        memberUserIds.add(project.createdBy._id.toString());
+        for (const emp of project.assignedEmployees || []) {
+          if (emp.user) memberUserIds.add(emp.user._id.toString());
+        }
+
+        validatedTaggedUsers = taggedUsers.filter((uid) => {
+          const id = uid.toString();
+          return memberUserIds.has(id) && id !== req.user._id.toString();
+        });
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────
+
     const comment = await Comment.create({
       task: taskId || null,
       phase: phaseId || null,
       project: projectId || null,
       author: req.user._id,
       text,
-      taggedUsers: taggedUsers || [],
+      taggedUsers: validatedTaggedUsers,
     });
 
     const populated = await populateComment(Comment.findById(comment._id));

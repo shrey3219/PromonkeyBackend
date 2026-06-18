@@ -9,10 +9,10 @@ const { getPaginationOptions, paginatedResponse } = require("../utils/paginate")
 exports.createClient = async (req, res) => {
   try {
     const body = req.body || {};
-    const { clientName, companyName, email, phone, address, notes, password } = body;
+    const { name, companyName, email, phone, address, notes, password } = body;
 
-    if (!clientName || !email || !password || !phone || !address) {
-      return res.status(400).json({ message: "clientName, email, phone, address, and password are required" });
+    if (!name || !email || !password || !phone || !address) {
+      return res.status(400).json({ message: "name, email, phone, address, and password are required" });
     }
 
     const emailTaken = await User.findOne({ email: email.toLowerCase().trim() });
@@ -31,9 +31,8 @@ exports.createClient = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // phone lives in User only
     const user = await User.create({
-      name: clientName,
+      name: name,
       email: email.toLowerCase().trim(),
       phone,
       password: hashedPassword,
@@ -44,11 +43,9 @@ exports.createClient = async (req, res) => {
     let client;
     try {
       client = await Client.create({
-        clientName,
         companyName,
         address,
         notes,
-        profileImage,
         user: user._id,
         createdBy: req.user._id,
       });
@@ -59,13 +56,12 @@ exports.createClient = async (req, res) => {
       }
       throw clientError;
     }
-
     await client.populate([
       { path: "createdBy", select: "name email" },
       { path: "user", select: "name email phone profileImage" },
     ]);
 
-    sendClientWelcomeEmail(email, clientName, password).catch((err) => {
+    sendClientWelcomeEmail(email, name, password).catch((err) => {
       console.error("Failed to send client welcome email:", err.message);
     });
 
@@ -119,7 +115,7 @@ exports.updateClient = async (req, res) => {
   try {
     const body = req.body || {};
 
-    const clientName  = body.clientName  !== undefined ? String(body.clientName).trim()  : undefined;
+    const name        = body.name        !== undefined ? String(body.name).trim()        : undefined;
     const companyName = body.companyName !== undefined ? String(body.companyName).trim()  : undefined;
     const email       = body.email       !== undefined ? String(body.email).trim()        : undefined;
     const phone       = body.phone       !== undefined ? String(body.phone).trim()        : undefined;
@@ -127,7 +123,7 @@ exports.updateClient = async (req, res) => {
     const notes       = body.notes       !== undefined ? String(body.notes).trim()        : undefined;
     const password    = body.password    !== undefined ? String(body.password).trim()     : undefined;
 
-    if (!req.file && [clientName, companyName, email, phone, address, notes, password].every(v => v === undefined)) {
+    if (!req.file && [name, companyName, email, phone, address, notes, password].every(v => v === undefined)) {
       return res.status(400).json({ message: "No fields provided to update" });
     }
 
@@ -136,7 +132,7 @@ exports.updateClient = async (req, res) => {
       return res.status(404).json({ message: "Client not found" });
     }
 
-    if (clientName !== undefined && clientName === "") return res.status(400).json({ message: "Client name cannot be empty" });
+    if (name    !== undefined && name    === "") return res.status(400).json({ message: "Client name cannot be empty" });
     if (email      !== undefined && email      === "") return res.status(400).json({ message: "Email cannot be empty" });
     if (phone      !== undefined && phone      === "") return res.status(400).json({ message: "Phone number cannot be empty" });
     if (address    !== undefined && address    === "") return res.status(400).json({ message: "Address cannot be empty" });
@@ -164,27 +160,22 @@ exports.updateClient = async (req, res) => {
     }
 
     if (req.file) {
-      if (client.profileImage?.publicId) {
-        await cloudinary.uploader.destroy(client.profileImage.publicId).catch(() => {});
+      if (client.user?.profileImage?.publicId) {
+        await cloudinary.uploader.destroy(client.user.profileImage.publicId).catch(() => {});
       }
-      client.profileImage = { url: req.file.path, publicId: req.file.filename };
     }
 
-    // Client model mein sirf yeh fields hain — phone nahi
     const clientSet = {};
-    if (clientName  !== undefined) clientSet.clientName  = clientName;
     if (companyName !== undefined) clientSet.companyName = companyName;
     if (address     !== undefined) clientSet.address     = address;
     if (notes       !== undefined) clientSet.notes       = notes;
-    if (req.file)                  clientSet.profileImage = client.profileImage;
 
     if (Object.keys(clientSet).length > 0) {
       await Client.collection.updateOne({ _id: client._id }, { $set: clientSet });
     }
 
-    // phone sirf User mein save hoga
     const userSet = {};
-    if (clientName       !== undefined) userSet.name  = clientName;
+    if (name             !== undefined) userSet.name  = name;
     if (normalizedEmail  !== undefined) userSet.email = normalizedEmail;
     if (phone            !== undefined) userSet.phone = phone;
     if (req.file) {
@@ -208,7 +199,7 @@ exports.updateClient = async (req, res) => {
     }
 
     if (emailChanged && normalizedEmail) {
-      sendClientEmailUpdateEmail(normalizedEmail, updatedClient.clientName).catch((err) => {
+      sendClientEmailUpdateEmail(normalizedEmail, updatedClient.user?.name).catch((err) => {
         console.error("Email update notification failed:", err.message);
       });
     }
@@ -216,7 +207,7 @@ exports.updateClient = async (req, res) => {
     if (password !== undefined) {
       const notifyEmail = normalizedEmail || currentEmail;
       if (notifyEmail) {
-        sendClientPasswordUpdateEmail(notifyEmail, updatedClient.clientName, password).catch((err) => {
+        sendClientPasswordUpdateEmail(notifyEmail, updatedClient.user?.name, password).catch((err) => {
           console.error("Password update notification failed:", err.message);
         });
       }
@@ -248,11 +239,11 @@ exports.deleteClient = async (req, res) => {
     await Client.findByIdAndDelete(client._id);
 
     if (client.user) {
+      const userDoc = await User.findById(client.user);
+      if (userDoc?.profileImage?.publicId) {
+        await cloudinary.uploader.destroy(userDoc.profileImage.publicId).catch(() => {});
+      }
       await User.findByIdAndDelete(client.user);
-    }
-
-    if (client.profileImage?.publicId) {
-      await cloudinary.uploader.destroy(client.profileImage.publicId).catch(() => {});
     }
 
     res.json({ message: "Client deleted successfully" });

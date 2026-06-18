@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Project = require("../models/Project");
 const Phase = require("../models/Phase");
 const Task = require("../models/Task");
@@ -10,7 +11,6 @@ exports.getDashboard = async (req, res) => {
   try {
     const { role, _id: userId } = req.user;
 
-    // ── ADMIN DASHBOARD 
     if (role === "admin") {
       const [
         totalProjects,
@@ -36,14 +36,19 @@ exports.getDashboard = async (req, res) => {
         Project.find()
           .sort({ createdAt: -1 })
           .limit(5)
-          .populate("client", "clientName companyName profileImage")
+          .populate({
+            path: "client",
+            select: "companyName",
+            populate: { path: "user", select: "name profileImage" },
+          })
           .populate("createdBy", "name email")
           .select("name status priority startDate estimatedEndDate createdAt client createdBy"),
         Client.find()
           .sort({ createdAt: -1 })
           .limit(5)
           .populate("createdBy", "name email")
-          .select("clientName companyName email phone profileImage createdAt createdBy"),
+          .populate("user", "name email phone profileImage")
+          .select("companyName profileImage createdAt createdBy user"),
         Employee.find()
           .sort({ createdAt: -1 })
           .limit(5)
@@ -62,10 +67,13 @@ exports.getDashboard = async (req, res) => {
         estimatedEndDate: { $lt: new Date() },
         status: { $nin: ["completed", "cancelled"] },
       })
-        .populate("client", "clientName companyName profileImage")
+        .populate({
+          path: "client",
+          select: "companyName",
+          populate: { path: "user", select: "name profileImage" },
+        })
         .select("name status priority startDate estimatedEndDate client");
 
-      // Overdue tasks (past dueDate and not completed)
       const overdueTasksCount = await Task.countDocuments({
         dueDate: { $lt: new Date() },
         status: { $nin: ["completed"] },
@@ -152,60 +160,97 @@ exports.getDashboard = async (req, res) => {
         return res.status(403).json({ message: "No employee record found" });
       }
 
-      // Phases assigned to this employee
-      const assignedPhases = await Phase.find({ assignees: empRecord._id })
-        .populate("project", "name status")
-        .select("name status project estimatedEndDate");
 
-      // Unique projects from phases
-      const projectIds = [...new Set(assignedPhases.map((p) => p.project?._id?.toString()).filter(Boolean))];
+      const createdProjects = await Project.find({ createdBy: userId }, "_id");
+      const memberProjects  = await Project.find({ assignedEmployees: empRecord._id }, "_id");
+      const phasesAssigned  = await Phase.find({ assignees: empRecord._id }, "project");
+      const phaseProjectIds = phasesAssigned.map((p) => p.project?.toString()).filter(Boolean);
 
-      // Tasks assigned to this employee
-      const [myTasks, taskSummary] = await Promise.all([
-        Task.find({ assignedTo: empRecord._id })
+      const allProjectIds = [
+        ...new Set([
+          ...createdProjects.map((p) => p._id.toString()),
+          ...memberProjects.map((p)  => p._id.toString()),
+          ...phaseProjectIds,
+        ]),
+      ];
+
+
+      const ownerProjectIds = [
+        ...new Set([
+          ...createdProjects.map((p) => p._id.toString()),
+          ...memberProjects.map((p)  => p._id.toString()),
+        ]),
+      ];
+
+      const [ownerPhases, assigneePhases] = await Promise.all([
+
+        Phase.find({ project: { $in: ownerProjectIds } })
+          .populate("project", "name status")
+          .select("name status project estimatedEndDate"),
+        Phase.find({ assignees: empRecord._id })
+          .populate("project", "name status")
+          .select("name status project estimatedEndDate"),
+      ]);
+
+      const phaseMap = new Map();
+      [...ownerPhases, ...assigneePhases].forEach((p) => phaseMap.set(p._id.toString(), p));
+      const allPhases = [...phaseMap.values()];
+
+ 
+      const [ownerTasks, assignedTasks] = await Promise.all([
+        Task.find({ project: { $in: ownerProjectIds } }, "_id"),
+        Task.find({ assignedTo: empRecord._id }, "_id"),
+      ]);
+      const taskIdSet = new Set([
+        ...ownerTasks.map((t) => t._id.toString()),
+        ...assignedTasks.map((t) => t._id.toString()),
+      ]);
+      const allAccessibleTaskIds = [...taskIdSet];
+
+      // ── Stats queries
+      const [myTasks, taskSummary, hoursAgg, overdueCount] = await Promise.all([
+        Task.find({ _id: { $in: allAccessibleTaskIds } })
           .sort({ dueDate: 1 })
           .limit(5)
           .populate("project", "name")
           .populate("phase", "name")
           .select("name status dueDate project phase estimatedHours"),
         Task.aggregate([
-          { $match: { assignedTo: empRecord._id } },
+          { $match: { _id: { $in: allAccessibleTaskIds.map((id) => new mongoose.Types.ObjectId(id)) } } },
           { $group: { _id: "$status", count: { $sum: 1 } } },
         ]),
+        TimeEntry.aggregate([
+          { $match: { employee: empRecord._id } },
+          { $group: { _id: null, totalHours: { $sum: "$hoursLogged" } } },
+        ]),
+        Task.countDocuments({
+          _id: { $in: allAccessibleTaskIds },
+          dueDate: { $lt: new Date() },
+          status: { $nin: ["completed"] },
+        }),
       ]);
-
-      // Hours logged by this employee
-      const hoursAgg = await TimeEntry.aggregate([
-        { $match: { employee: empRecord._id } },
-        { $group: { _id: null, totalHours: { $sum: "$hoursLogged" } } },
-      ]);
-
-      const overdueCount = await Task.countDocuments({
-        assignedTo: empRecord._id,
-        dueDate: { $lt: new Date() },
-        status: { $nin: ["completed"] },
-      });
 
       return res.json({
         role: "employee",
         stats: {
-          totalAssignedProjects: projectIds.length,
-          totalAssignedPhases: assignedPhases.length,
-          totalHoursLogged: hoursAgg[0]?.totalHours || 0,
-          overdueTasksCount: overdueCount,
+          totalAssignedProjects: allProjectIds.length,
+          totalAssignedPhases:   allPhases.length,
+          totalHoursLogged:      hoursAgg[0]?.totalHours || 0,
+          overdueTasksCount:     overdueCount,
         },
         tasksByStatus: taskSummary.reduce((acc, t) => {
           acc[t._id] = t.count;
           return acc;
         }, {}),
-        recentTasks: myTasks,
-        assignedPhases,
+        recentTasks:    myTasks,
+        assignedPhases: allPhases,
       });
     }
 
     // ── CLIENT DASHBOARD 
     if (role === "client") {
-      const clientRecord = await Client.findOne({ user: userId });
+      const clientRecord = await Client.findOne({ user: userId })
+        .populate("user", "name email phone profileImage");
       if (!clientRecord) {
         return res.status(403).json({ message: "No client record found" });
       }
@@ -216,7 +261,6 @@ exports.getDashboard = async (req, res) => {
 
       const projectIds = myProjects.map((p) => p._id);
 
-      // Phase summary across client's projects
       const phaseSummary = await Phase.aggregate([
         { $match: { project: { $in: projectIds } } },
         { $group: { _id: "$status", count: { $sum: 1 } } },
@@ -226,12 +270,12 @@ exports.getDashboard = async (req, res) => {
         role: "client",
         client: {
           _id: clientRecord._id,
-          clientName: clientRecord.clientName,
           companyName: clientRecord.companyName,
-          email: clientRecord.email,
-          phone: clientRecord.phone,
+          name: clientRecord.user?.name,
+          email: clientRecord.user?.email,
+          phone: clientRecord.user?.phone,
           address: clientRecord.address,
-          profileImage: clientRecord.profileImage,
+          profileImage: clientRecord.user?.profileImage,
         },
         stats: {
           totalProjects: myProjects.length,

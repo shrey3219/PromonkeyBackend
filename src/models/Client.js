@@ -3,11 +3,6 @@ const mongoosePaginate = require("mongoose-paginate-v2");
 
 const clientSchema = new mongoose.Schema(
   {
-    clientName: {
-      type: String,
-      required: true,
-      trim: true,
-    },
     companyName: {
       type: String,
       trim: true,
@@ -20,10 +15,6 @@ const clientSchema = new mongoose.Schema(
     notes: {
       type: String,
       trim: true,
-    },
-    profileImage: {
-      url: { type: String, default: "" },
-      publicId: { type: String, default: "" },
     },
     user: {
       type: mongoose.Schema.Types.ObjectId,

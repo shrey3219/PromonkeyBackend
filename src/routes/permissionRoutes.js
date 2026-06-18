@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const { protect, authorize } = require("../middleware/authMiddleware");
+const { protect, checkPermission, blockClient } = require("../middleware/authMiddleware");
 const {
   getValidModules,
   getPermissions,
@@ -9,13 +9,12 @@ const {
   deletePermission,
 } = require("../controllers/permissionController");
 
-// Public-ish helper — frontend uses this to populate the module multi-select
-router.get("/valid-modules", protect, authorize("admin"), getValidModules);
+router.get("/valid-modules", protect, blockClient, getValidModules);
 
-router.get("/grouped", protect, authorize("admin"), getPermissionsGrouped);
-router.get("/", protect, authorize("admin"), getPermissions);
-router.post("/", protect, authorize("admin"), createPermission);
-router.put("/:id", protect, authorize("admin"), updatePermission);
-router.delete("/:id", protect, authorize("admin"), deletePermission);
+router.get("/grouped", protect, blockClient, checkPermission("Permissions", "read"), getPermissionsGrouped);
+router.get("/", protect, blockClient, checkPermission("Permissions", "read"), getPermissions);
+router.post("/", protect, blockClient, checkPermission("Permissions", "create"), createPermission);
+router.put("/:id", protect, blockClient, checkPermission("Permissions", "update"), updatePermission);
+router.delete("/:id", protect, blockClient, checkPermission("Permissions", "delete"), deletePermission);
 
 module.exports = router;

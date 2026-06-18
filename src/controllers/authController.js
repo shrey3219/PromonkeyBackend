@@ -187,11 +187,9 @@ exports.updateProfile = async (req, res) => {
     const role = req.user.role;
     const { name, phone } = req.body;
  
-    // ── Step 1: Update User model (common fields) ──
     const userUpdateFields = {};
     if (name !== undefined) userUpdateFields.name = name;
     if (phone !== undefined) {
-      // Check phone uniqueness against other users
       const phoneTaken = await User.findOne({ phone, _id: { $ne: userId } });
       if (phoneTaken) {
         return res.status(400).json({ message: "Phone number already in use" });
@@ -218,9 +216,6 @@ exports.updateProfile = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
  
-    // ── Step 2: Role-specific model updates ──
- 
-    // EMPLOYEE: update Employee model fields
     if (role === "employee") {
       const { department } = req.body;
       const empUpdateFields = {};
@@ -261,20 +256,14 @@ exports.updateProfile = async (req, res) => {
       });
     }
  
-    // CLIENT: update Client model fields
     if (role === "client") {
       const Client = require("../models/Client");
       const { companyName, address, notes } = req.body;
  
       const clientUpdateFields = {};
-      if (name !== undefined) clientUpdateFields.clientName = name;
       if (companyName !== undefined) clientUpdateFields.companyName = companyName;
       if (address !== undefined) clientUpdateFields.address = address;
       if (notes !== undefined) clientUpdateFields.notes = notes;
-      if (req.file) {
-        clientUpdateFields["profileImage.url"] = req.file.path;
-        clientUpdateFields["profileImage.publicId"] = req.file.filename;
-      }
  
       const updatedClient = await Client.findOneAndUpdate(
         { user: userId },
@@ -292,17 +281,14 @@ exports.updateProfile = async (req, res) => {
         client: updatedClient
           ? {
               _id: updatedClient._id,
-              clientName: updatedClient.clientName,
               companyName: updatedClient.companyName,
               address: updatedClient.address,
               notes: updatedClient.notes,
-              profileImage: updatedClient.profileImage,
             }
           : null,
       });
     }
  
-    // ADMIN: only User model fields (name, phone, profileImage)
     res.json({
       _id: updatedUser._id,
       name: updatedUser.name,
@@ -462,11 +448,8 @@ exports.unifiedLogin = async (req, res) => {
         user: baseUser,
         client: {
           _id: client._id,
-          clientName: client.clientName,
           companyName: client.companyName,
-          phone: client.phone,
           address: client.address,
-          profileImage: client.profileImage,
         },
       });
     }
@@ -550,12 +533,9 @@ exports.getProfile = async (req, res) => {
         user: baseUser,
         client: {
           _id: client._id,
-          clientName: client.clientName,
           companyName: client.companyName,
-          phone: client.phone,
           address: client.address,
           notes: client.notes,
-          profileImage: client.profileImage,
         },
       });
     }
@@ -614,11 +594,8 @@ exports.clientLogin = async (req, res) => {
       },
       client: {
         _id: client._id,
-        clientName: client.clientName,
         companyName: client.companyName,
-        phone: client.phone,
         address: client.address,
-        profileImage: client.profileImage,
       },
     });
   } catch (error) {

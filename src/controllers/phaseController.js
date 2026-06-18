@@ -36,6 +36,18 @@ exports.createPhase = async (req, res) => {
       return res.status(404).json({ message: "Project not found" });
     }
 
+    // Ownership check: employee must be project creator or assignedEmployee to create phases
+    if (req.user.role === "employee") {
+      const empRecord = await Employee.findOne({ user: req.user._id });
+      const isCreator = projectExists.createdBy.toString() === req.user._id.toString();
+      const isMember  = empRecord && projectExists.assignedEmployees?.some(
+        (e) => e.toString() === empRecord._id.toString()
+      );
+      if (!isCreator && !isMember) {
+        return res.status(403).json({ message: "Access denied. You can only create phases in projects you created or are assigned to." });
+      }
+    }
+
     if (assignees && assignees.length > 0) {
       const count = await Employee.countDocuments({ _id: { $in: assignees } });
       if (count !== assignees.length) {
@@ -71,7 +83,30 @@ exports.getPhases = async (req, res) => {
     if (req.user.role === "employee") {
       const empRecord = await Employee.findOne({ user: req.user._id });
       if (!empRecord) return res.json({ data: [], pagination: { total: 0, page: 1, limit: 10, totalPages: 0, hasNextPage: false, hasPrevPage: false } });
-      filter.assignees = empRecord._id;
+
+      const assignedFilter = { assignees: empRecord._id };
+      if (filter.project) assignedFilter.project = filter.project;
+      const assignedPhaseIds = (await Phase.find(assignedFilter, "_id")).map((p) => p._id.toString());
+
+      const createdProjects = await Project.find({ createdBy: req.user._id }, "_id");
+      const createdProjectIds = createdProjects.map((p) => p._id.toString());
+
+      const memberProjects = await Project.find({ assignedEmployees: empRecord._id }, "_id");
+      const memberProjectIds = memberProjects.map((p) => p._id.toString());
+
+      const accessibleProjectIds = [...new Set([...createdProjectIds, ...memberProjectIds])];
+
+      let accessiblePhaseIds = [];
+      if (accessibleProjectIds.length > 0) {
+        const accessFilter = { project: { $in: accessibleProjectIds } };
+        if (filter.project) accessFilter.project = filter.project;
+        accessiblePhaseIds = (await Phase.find(accessFilter, "_id")).map((p) => p._id.toString());
+      }
+
+      const allPhaseIds = [...new Set([...assignedPhaseIds, ...accessiblePhaseIds])];
+
+      delete filter.assignees;
+      filter._id = { $in: allPhaseIds };
     }
 
     const { page, limit } = getPaginationOptions(req.query);
@@ -108,10 +143,20 @@ exports.getPhaseById = async (req, res) => {
     if (req.user.role === "employee") {
       const empRecord = await Employee.findOne({ user: req.user._id });
       if (!empRecord) return res.status(403).json({ message: "Access denied" });
+
       const isAssigned = phase.assignees.some(
         (a) => a._id.toString() === empRecord._id.toString()
       );
-      if (!isAssigned) return res.status(403).json({ message: "Access denied" });
+
+      const project = await Project.findById(phase.project);
+      const isCreator = project && project.createdBy.toString() === req.user._id.toString();
+      const isProjectMember = project && project.assignedEmployees?.some(
+        (e) => e.toString() === empRecord._id.toString()
+      );
+
+      if (!isAssigned && !isCreator && !isProjectMember) {
+        return res.status(403).json({ message: "Access denied" });
+      }
     }
 
     res.json(phase);
@@ -138,6 +183,18 @@ exports.updatePhase = async (req, res) => {
     const phase = await Phase.findById(req.params.id);
     if (!phase) {
       return res.status(404).json({ message: "Phase not found" });
+    }
+
+    if (req.user.role === "employee") {
+      const empRecord = await Employee.findOne({ user: req.user._id });
+      const project = await Project.findById(phase.project);
+      const isCreator = project && project.createdBy.toString() === req.user._id.toString();
+      const isAssigned = empRecord && project && project.assignedEmployees?.some(
+        (e) => e.toString() === empRecord._id.toString()
+      );
+      if (!isCreator && !isAssigned) {
+        return res.status(403).json({ message: "Access denied. You can only update phases in projects you created or are assigned to." });
+      }
     }
 
     if (name !== undefined) phase.name = name;
@@ -170,11 +227,75 @@ exports.updatePhase = async (req, res) => {
 // ─── DELETE /api/phases/:id
 exports.deletePhase = async (req, res) => {
   try {
-    const phase = await Phase.findByIdAndDelete(req.params.id);
+    const phase = await Phase.findById(req.params.id);
     if (!phase) {
       return res.status(404).json({ message: "Phase not found" });
     }
+
+    if (req.user.role === "employee") {
+      const empRecord = await Employee.findOne({ user: req.user._id });
+      const project = await Project.findById(phase.project);
+      const isCreator = project && project.createdBy.toString() === req.user._id.toString();
+      const isAssigned = empRecord && project && project.assignedEmployees?.some(
+        (e) => e.toString() === empRecord._id.toString()
+      );
+      if (!isCreator && !isAssigned) {
+        return res.status(403).json({ message: "Access denied. You can only delete phases in projects you created or are assigned to." });
+      }
+    }
+
+    await Phase.findByIdAndDelete(req.params.id);
     res.json({ message: "Phase deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getPhaseMembers = async (req, res) => {
+  try {
+    const phase = await Phase.findById(req.params.id).populate({
+      path: "assignees",
+      populate: { path: "user", select: "name email profileImage role" },
+    });
+    if (!phase) {
+      return res.status(404).json({ message: "Phase not found" });
+    }
+
+    const project = await Project.findById(phase.project)
+      .populate("createdBy", "name email profileImage role");
+
+    if (req.user.role === "employee") {
+      const empRecord = await Employee.findOne({ user: req.user._id });
+      if (!empRecord) return res.status(403).json({ message: "Access denied" });
+      const isCreator  = project && project.createdBy._id.toString() === req.user._id.toString();
+      const isMember   = project && project.assignedEmployees?.some((e) => e.toString() === empRecord._id.toString());
+      const isAssigned = phase.assignees?.some((a) => a._id?.toString() === empRecord._id.toString());
+      if (!isCreator && !isMember && !isAssigned) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
+    const members = [];
+
+    if (project && project.createdBy._id.toString() !== req.user._id.toString()) {
+      members.push(project.createdBy);
+    }
+
+    for (const emp of (phase.assignees || [])) {
+      if (emp.user && emp.user._id.toString() !== req.user._id.toString()) {
+        members.push(emp.user);
+      }
+    }
+
+    const seen = new Set();
+    const unique = members.filter((m) => {
+      const id = m._id.toString();
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    res.json(unique);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -187,6 +308,19 @@ exports.getPhaseEmployees = async (req, res) => {
     if (!phase) {
       return res.status(404).json({ message: "Phase not found" });
     }
+
+    if (req.user.role === "employee") {
+      const empRecord = await Employee.findOne({ user: req.user._id });
+      if (!empRecord) return res.status(403).json({ message: "Access denied" });
+      const project = await Project.findById(phase.project);
+      const isCreator  = project && project.createdBy.toString() === req.user._id.toString();
+      const isMember   = project && project.assignedEmployees?.some((e) => e.toString() === empRecord._id.toString());
+      const isAssigned = phase.assignees?.some((a) => a._id?.toString() === empRecord._id.toString());
+      if (!isCreator && !isMember && !isAssigned) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
     res.json(phase.assignees || []);
   } catch (error) {
     res.status(500).json({ message: error.message });

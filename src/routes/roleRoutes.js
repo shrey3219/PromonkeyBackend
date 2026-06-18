@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const { protect, authorize, blockClient } = require("../middleware/authMiddleware");
+const { protect, checkPermission, blockClient } = require("../middleware/authMiddleware");
 const {
   createRole,
   getRoles,
@@ -9,12 +9,11 @@ const {
   deleteRole,
 } = require("../controllers/roleController");
 
-router.post("/", protect, authorize("admin"), createRole);
-router.put("/:id", protect, authorize("admin"), updateRole);
-router.delete("/:id", protect, authorize("admin"), deleteRole);
-router.get("/hierarchy", protect, authorize("admin"), getRoleHierarchy);
-
-router.get("/", protect, blockClient, getRoles);
-router.get("/:id", protect, blockClient, getRoleById);
+router.post("/", protect, blockClient, checkPermission("Roles", "create"), createRole);
+router.put("/:id", protect, blockClient, checkPermission("Roles", "update"), updateRole);
+router.delete("/:id", protect, blockClient, checkPermission("Roles", "delete"), deleteRole);
+router.get("/hierarchy", protect, blockClient, checkPermission("Roles", "read"), getRoleHierarchy);
+router.get("/", protect, blockClient, checkPermission("Roles", "read"), getRoles);
+router.get("/:id", protect, blockClient, checkPermission("Roles", "read"), getRoleById);
 
 module.exports = router;

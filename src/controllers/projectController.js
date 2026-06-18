@@ -2,12 +2,17 @@ const Project = require("../models/Project");
 const Phase = require("../models/Phase");
 const Task = require("../models/Task");
 const Client = require("../models/Client");
+const User = require("../models/User");
 const { cloudinary } = require("../config/cloudinary");
 const { getPaginationOptions, paginatedResponse } = require("../utils/paginate");
 
 const populateProject = (query) =>
   query
-    .populate("client", "clientName companyName email phone profileImage")
+    .populate({
+      path: "client",
+      select: "companyName",
+      populate: { path: "user", select: "name email phone profileImage" },
+    })
     .populate("createdBy", "name email")
     .populate({
       path: "assignedEmployees",
@@ -26,9 +31,9 @@ const calcProgress = async (projectId) => {
   };
 };
 
-const getProjectWithPhases = async (projectDoc, employeeId = null) => {
+const getProjectWithPhases = async (projectDoc, employeeId = null, showAllPhases = false) => {
   let phaseQuery = Phase.find({ project: projectDoc._id });
-  if (employeeId) {
+  if (employeeId && !showAllPhases) {
     phaseQuery = Phase.find({ project: projectDoc._id, assignees: employeeId });
   }
 
@@ -171,10 +176,11 @@ exports.getProjects = async (req, res) => {
       const phaseProjectIds = assignedPhases.map((p) => p.project.toString());
       const directProjects = await Project.find({ assignedEmployees: empRecord._id }, "_id");
       const directProjectIds = directProjects.map((p) => p._id.toString());
-      const projectIds = [...new Set([...phaseProjectIds, ...directProjectIds])];
+      const createdProjects = await Project.find({ createdBy: req.user._id }, "_id");
+      const createdProjectIds = createdProjects.map((p) => p._id.toString());
+      const projectIds = [...new Set([...phaseProjectIds, ...directProjectIds, ...createdProjectIds])];
       filter._id = { $in: projectIds };
     }
-
     if (req.query.status) filter.status = req.query.status;
     if (req.query.priority) filter.priority = req.query.priority;
     if (req.query.client && req.user.role !== "client" && req.user.role !== "employee") {
@@ -186,7 +192,11 @@ exports.getProjects = async (req, res) => {
       limit,
       sort: { createdAt: -1 },
       populate: [
-        { path: "client", select: "clientName companyName email phone profileImage" },
+        {
+          path: "client",
+          select: "companyName",
+          populate: { path: "user", select: "name email phone profileImage" },
+        },
         { path: "createdBy", select: "name email" },
         {
           path: "assignedEmployees",
@@ -196,7 +206,19 @@ exports.getProjects = async (req, res) => {
     });
 
     const docsWithPhases = await Promise.all(
-      result.docs.map((p) => getProjectWithPhases(p, employeeId))
+      result.docs.map((p) => {
+        if (req.user.role === "employee") {
+          const isCreator = p.createdBy?._id?.toString() === req.user._id.toString();
+          const isProjectMember = p.assignedEmployees?.some(
+            (e) => e._id?.toString() === employeeId?.toString()
+          );
+          if (isCreator || isProjectMember) {
+            return getProjectWithPhases(p, null); 
+          }
+          return getProjectWithPhases(p, employeeId); 
+        }
+        return getProjectWithPhases(p);
+      })
     );
 
     res.json({
@@ -241,10 +263,15 @@ exports.getProjectById = async (req, res) => {
         (e) => e._id?.toString() === empRecord._id.toString()
       );
       const assignedPhase = await Phase.findOne({ project: project._id, assignees: empRecord._id });
-      if (!isDirectlyAssigned && !assignedPhase) {
+      const isCreator = project.createdBy._id?.toString() === req.user._id.toString();
+      if (!isDirectlyAssigned && !assignedPhase && !isCreator) {
         return res.status(403).json({ message: "Access denied" });
       }
       employeeId = empRecord._id;
+
+      const showAllPhases = isCreator || isDirectlyAssigned;
+      const result = await getProjectWithPhases(project, showAllPhases ? null : employeeId);
+      return res.json(result);
     }
 
     const result = await getProjectWithPhases(project, employeeId);
@@ -273,6 +300,17 @@ exports.updateProject = async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
+    }
+
+    if (req.user.role === "employee") {
+      const empRecord = await require("../models/Employee").findOne({ user: req.user._id });
+      const isCreator = project.createdBy.toString() === req.user._id.toString();
+      const isAssigned = empRecord && project.assignedEmployees?.some(
+        (e) => e.toString() === empRecord._id.toString()
+      );
+      if (!isCreator && !isAssigned) {
+        return res.status(403).json({ message: "Access denied. You can only update projects you created or are assigned to." });
+      }
     }
 
     if (client) {
@@ -376,7 +414,70 @@ exports.getProjectEmployees = async (req, res) => {
       return res.status(404).json({ message: "Project not found" });
     }
 
+  
+    if (req.user.role === "employee") {
+      const empRecord = await require("../models/Employee").findOne({ user: req.user._id });
+      if (!empRecord) return res.status(403).json({ message: "Access denied" });
+      const isCreator  = project.createdBy._id?.toString() === req.user._id.toString();
+      const isMember   = project.assignedEmployees?.some((e) => e._id?.toString() === empRecord._id.toString());
+      const hasPhase   = await Phase.findOne({ project: project._id, assignees: empRecord._id });
+      if (!isCreator && !isMember && !hasPhase) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
     res.json(project.assignedEmployees || []);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getProjectMembers = async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id)
+      .populate("createdBy", "name email profileImage role")
+      .populate({
+        path: "assignedEmployees",
+        populate: { path: "user", select: "name email profileImage role" },
+      });
+
+    if (!project) {
+      return res.status(404).json({ message: "Project not found" });
+    }
+
+
+    if (req.user.role === "employee") {
+      const empRecord = await require("../models/Employee").findOne({ user: req.user._id });
+      if (!empRecord) return res.status(403).json({ message: "Access denied" });
+      const isCreator = project.createdBy._id?.toString() === req.user._id.toString();
+      const isMember  = project.assignedEmployees?.some((e) => e._id?.toString() === empRecord._id.toString());
+      const hasPhase  = await Phase.findOne({ project: project._id, assignees: empRecord._id });
+      if (!isCreator && !isMember && !hasPhase) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
+    const members = [];
+
+    if (project.createdBy._id.toString() !== req.user._id.toString()) {
+      members.push(project.createdBy);
+    }
+
+    for (const emp of project.assignedEmployees || []) {
+      if (emp.user && emp.user._id.toString() !== req.user._id.toString()) {
+        members.push(emp.user);
+      }
+    }
+
+    const seen = new Set();
+    const unique = members.filter((m) => {
+      const id = m._id.toString();
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    res.json(unique);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -385,10 +486,19 @@ exports.getProjectEmployees = async (req, res) => {
 // ─── DELETE /api/projects/:id
 exports.deleteProject = async (req, res) => {
   try {
-    const project = await Project.findByIdAndDelete(req.params.id);
+    const project = await Project.findById(req.params.id);
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
     }
+
+    if (req.user.role === "employee") {
+      const isCreator = project.createdBy.toString() === req.user._id.toString();
+      if (!isCreator) {
+        return res.status(403).json({ message: "Access denied. Only the project creator can delete this project." });
+      }
+    }
+
+    await Project.findByIdAndDelete(req.params.id);
 
     const deletePromises = project.requirementDocs.map((doc) => {
       const isImage = doc.fileType && doc.fileType.startsWith("image/");
@@ -410,6 +520,17 @@ exports.deleteRequirementDoc = async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
+    }
+
+    if (req.user.role === "employee") {
+      const empRecord = await require("../models/Employee").findOne({ user: req.user._id });
+      const isCreator = project.createdBy.toString() === req.user._id.toString();
+      const isAssigned = empRecord && project.assignedEmployees?.some(
+        (e) => e.toString() === empRecord._id.toString()
+      );
+      if (!isCreator && !isAssigned) {
+        return res.status(403).json({ message: "Access denied. You can only modify projects you created or are assigned to." });
+      }
     }
 
     const doc = project.requirementDocs.id(req.params.docId);
